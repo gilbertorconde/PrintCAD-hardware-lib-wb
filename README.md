@@ -24,11 +24,8 @@ number takes a formula, as printCAD's own fields do.
 | Springs | compression springs | wire, diameter, length and turns |
 
 Screws carry their drive recess, and fasteners can carry a modelled
-thread (off by default: a thread takes the kernel a second or two). The
-kernel's boolean refuses a helical groove at some start angles for some
-sizes; should a thread come out marked failed, change its **Thread start
-angle**. Every table dimension can be overridden with **Custom
-dimensions**. Each part's tree
+thread (off by default: a thread takes the kernel a second or two).
+Every table dimension can be overridden with **Custom dimensions**. Each part's tree
 entry has **Edit hardware**; selecting one in the tree opens its panel.
 
 Scripts and agents make parts with one command and read what is offered

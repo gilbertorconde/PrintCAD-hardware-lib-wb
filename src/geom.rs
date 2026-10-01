@@ -206,12 +206,10 @@ pub fn hex_socket(s: f64, t: f64, z: f64) -> SolidOp {
 /// A thread's groove, cut along a helix. `open` is the radius the groove
 /// opens at (a screw's outside, a nut's bore) and `bottom` the radius it
 /// reaches; it is wide at the opening and nearly sharp at the bottom, at
-/// 60° flanks. It runs from `z_top` down `length`, starting a pitch
-/// above when `lead_in`, so the groove enters a plain shank cleanly, and
-/// running out a pitch past the end when `run_out`; otherwise it keeps a
-/// pitch and a half clear of both ends, which is what the kernel's
-/// boolean resolves reliably where a face and a chamfer meet.
-#[allow(clippy::too_many_arguments)]
+/// 60° flanks. It runs from `z_top` down `length` and a pitch past, out
+/// through the end. With `lead_in` it starts a pitch above, so the groove
+/// enters a plain shank cleanly; without, half a pitch down, so its first
+/// turn stays within the face it starts under.
 pub fn thread_groove(
     open: f64,
     bottom: f64,
@@ -219,72 +217,25 @@ pub fn thread_groove(
     z_top: f64,
     length: f64,
     lead_in: bool,
-    run_out: bool,
-    angle_deg: f64,
     left_handed: bool,
 ) -> SolidOp {
-    let start = if lead_in { -pitch } else { 1.5 * pitch };
-    let end = if run_out {
-        length + pitch
-    } else {
-        length - 1.5 * pitch
-    };
-    thread_groove_from(
-        open,
-        bottom,
-        pitch,
-        z_top,
-        end,
-        start,
-        0.5 * pitch,
-        angle_deg,
-        left_handed,
-    )
-}
-
-/// The angle about the axis a groove starts at unless the part says
-/// otherwise. The kernel's boolean resolves a helical groove against a
-/// body of revolution at most angles but not all: for a few sizes some
-/// angle lands an edge on the body's seam or a chamfer's edge and the
-/// cut fails. Of the angles tried on fifteen threads, this one and a few
-/// others failed one; a part exposes its angle so a refused thread can be
-/// nudged.
-pub const THREAD_PHASE_DEG: f64 = 71.0;
-
-/// [`thread_groove`] with its start and end (down from `z_top`, in the
-/// axial plane), the margin the groove reaches past its opening and the
-/// angle about the axis it starts at given.
-#[allow(clippy::too_many_arguments)]
-pub fn thread_groove_from(
-    open: f64,
-    bottom: f64,
-    pitch: f64,
-    z_top: f64,
-    end: f64,
-    start: f64,
-    margin: f64,
-    angle_deg: f64,
-    left_handed: bool,
-) -> SolidOp {
-    // The section, in a plane through the axis at `angle_deg`: x out from
-    // the axis, y down it.
-    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    // The section, in a plane through the axis: x out from it, y down it.
     let plane = ProfilePlane {
         origin: [0.0, 0.0, z_top],
-        x_axis: [cos, sin, 0.0],
+        x_axis: [1.0, 0.0, 0.0],
         y_axis: [0.0, 0.0, -1.0],
-        normal: [-sin, cos, 0.0],
+        normal: [0.0, 1.0, 0.0],
     };
     let outward = open > bottom;
-    // Well past the opening, so the groove leaves no skin and meets the
-    // surface squarely rather than grazing it.
+    // Well past the opening, so the groove leaves no skin.
     let over = if outward {
-        open + margin
+        open + 0.5 * pitch
     } else {
-        (open - margin).max(0.1 * open)
+        (open - 0.5 * pitch).max(0.1 * open)
     };
     let crest = pitch / 16.0;
     let root = (crest + (open - bottom).abs() * (30f64).to_radians().tan()).min(0.45 * pitch);
+    let start = if lead_in { -pitch } else { 0.5 * pitch };
     let corners = [
         [over, start - root],
         [bottom, start - crest],
@@ -300,7 +251,7 @@ pub fn thread_groove_from(
             axis_origin: [0.0, 0.0],
             axis_dir: [0.0, 1.0],
             pitch,
-            height: end - start,
+            height: length + pitch - start,
             left_handed,
             cone_angle_deg: 0.0,
             reversed: false,
@@ -313,14 +264,7 @@ pub fn thread_groove_from(
 
 /// An external thread of major diameter `d` on a shank, from `z_top`
 /// down `length`.
-pub fn external_thread(
-    d: f64,
-    pitch: f64,
-    z_top: f64,
-    length: f64,
-    lead_in: bool,
-    angle_deg: f64,
-) -> SolidOp {
+pub fn external_thread(d: f64, pitch: f64, z_top: f64, length: f64, lead_in: bool) -> SolidOp {
     thread_groove(
         d / 2.0,
         d / 2.0 - 0.6134 * pitch,
@@ -329,30 +273,14 @@ pub fn external_thread(
         length,
         lead_in,
         false,
-        angle_deg,
-        false,
     )
 }
 
 /// An internal thread in a bore of minor diameter `minor`, out to major
 /// `d`, through a nut from `z_top` down `length`.
 pub fn internal_thread(d: f64, minor: f64, pitch: f64, z_top: f64, length: f64) -> SolidOp {
-    thread_groove(
-        minor / 2.0,
-        d / 2.0,
-        pitch,
-        z_top,
-        length,
-        true,
-        true,
-        INTERNAL_THREAD_PHASE_DEG,
-        false,
-    )
+    thread_groove(minor / 2.0, d / 2.0, pitch, z_top, length, true, false)
 }
-
-/// The start angle of an internal thread: the one every nut and insert
-/// tried built at (see [`THREAD_PHASE_DEG`]).
-pub const INTERNAL_THREAD_PHASE_DEG: f64 = 37.0;
 
 /// Points along an arc from angle `a0` to `a1` about `center`, for
 /// drawing (not for the kernel, which takes an arc as three points).
@@ -422,8 +350,7 @@ mod tests {
 
     #[test]
     fn a_thread_groove_opens_where_it_should() {
-        let SolidOp::Sweep { profile, kind, op } =
-            external_thread(3.0, 0.5, 0.0, 10.0, true, THREAD_PHASE_DEG)
+        let SolidOp::Sweep { profile, kind, op } = external_thread(3.0, 0.5, 0.0, 10.0, true)
         else {
             panic!("a sweep");
         };
@@ -433,8 +360,8 @@ mod tests {
         };
         assert_eq!(pitch, 0.5);
         assert!(
-            (height - 9.75).abs() < 1e-9,
-            "a pitch above, a pitch and a half short of the tip: {height}"
+            (height - 11.0).abs() < 1e-9,
+            "a pitch above and a pitch past the tip: {height}"
         );
         let xs: Vec<f64> = profile.wires[0]
             .segments

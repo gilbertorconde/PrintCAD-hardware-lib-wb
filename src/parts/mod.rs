@@ -292,24 +292,6 @@ pub fn number(ctx: &Ctx, id: &str, label: &str, value: f64, min: f64, decimals: 
     }
 }
 
-/// An angle bound to the feature's field `id`.
-pub fn angle(ctx: &Ctx, id: &str, label: &str, value: f64) -> Widget {
-    Widget::Number {
-        id: id.into(),
-        label: label.into(),
-        value,
-        dim: Dim::Angle,
-        bind: Some(Bind {
-            feature: ctx.feature.into(),
-            key: format!("/{id}"),
-        }),
-        min: Some(0.0),
-        max: Some(360.0),
-        decimals: 0,
-        error: None,
-    }
-}
-
 /// A count bound to the feature's field `id`.
 pub fn count(ctx: &Ctx, id: &str, label: &str, value: f64, min: f64) -> Widget {
     Widget::Number {
@@ -375,19 +357,6 @@ pub fn length(key: &str, label: &str) -> Parameter {
         name: Some(key.into()),
         label: label.into(),
         dim: Dim::Length,
-        pointer: format!("/{key}"),
-        scale: 1.0,
-        integer: false,
-    }
-}
-
-/// An angle parameter at `/key`.
-pub fn angle_param(key: &str, label: &str) -> Parameter {
-    Parameter {
-        key: format!("/{key}"),
-        name: Some(key.into()),
-        label: label.into(),
-        dim: Dim::Angle,
         pointer: format!("/{key}"),
         scale: 1.0,
         integer: false,

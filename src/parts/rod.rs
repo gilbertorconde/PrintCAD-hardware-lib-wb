@@ -116,14 +116,6 @@ pub struct Rod {
     pub custom: bool,
     #[serde(default)]
     pub thread: bool,
-    /// The angle about the axis the thread starts at; see
-    /// `geom::THREAD_PHASE_DEG` for why it is offered.
-    #[serde(default = "phase")]
-    pub thread_phase: f64,
-}
-
-fn phase() -> f64 {
-    geom::THREAD_PHASE_DEG
 }
 
 impl Rod {
@@ -137,7 +129,6 @@ impl Rod {
             length: 100.0,
             custom: false,
             thread: defaults.thread && kind == RodKind::Threaded,
-            thread_phase: geom::THREAD_PHASE_DEG,
         };
         rod.refill();
         if kind == RodKind::Dowel {
@@ -262,14 +253,7 @@ impl Part for Rod {
             BooleanOp::NewSolid,
         )];
         if self.thread && self.kind == RodKind::Threaded {
-            ops.push(geom::external_thread(
-                self.d,
-                self.pitch,
-                l,
-                l,
-                false,
-                self.thread_phase,
-            ));
+            ops.push(geom::external_thread(self.d, self.pitch, l, l, false));
         }
         if self.thread && self.kind == RodKind::LeadScrew {
             // A trapezoidal thread, half a pitch deep, one start at its lead.
@@ -280,8 +264,6 @@ impl Part for Rod {
                 l,
                 l,
                 false,
-                false,
-                self.thread_phase,
                 false,
             ));
         }
@@ -319,14 +301,8 @@ impl Part for Rod {
         if matches!(self.kind, RodKind::Threaded | RodKind::LeadScrew) {
             let mut options = vec![toggle("thread", "Modelled thread", self.thread)];
             if self.thread {
-                options.push(super::angle(
-                    ctx,
-                    "thread_phase",
-                    "Thread start angle",
-                    self.thread_phase,
-                ));
                 options.push(text(
-                    "A thread the length of a rod takes the kernel a while. Should the kernel refuse it, change the start angle.",
+                    "A thread the length of a rod takes the kernel a while.",
                 ));
             }
             if self.kind == RodKind::LeadScrew && self.lead > self.pitch * 1.5 {
@@ -346,7 +322,6 @@ impl Part for Rod {
             length("pitch", "Pitch"),
             length("lead", "Lead"),
             length("length", "Length"),
-            super::angle_param("thread_phase", "Thread start angle"),
         ]
     }
 
@@ -374,7 +349,6 @@ impl Part for Rod {
                 "pitch" => self.pitch = *value,
                 "lead" => self.lead = *value,
                 "length" => self.length = *value,
-                "thread_phase" => self.thread_phase = *value,
                 _ => return false,
             },
             PanelEvent::Toggle { id, on } => match id.as_str() {
@@ -428,9 +402,6 @@ impl Part for Rod {
         }
         if let Some(on) = arg_bool(args, "thread") {
             rod.thread = on;
-        }
-        if let Some(v) = arg_f64(args, "thread_phase") {
-            rod.thread_phase = v;
         }
         Ok(rod)
     }

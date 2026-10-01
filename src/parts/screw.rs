@@ -144,18 +144,10 @@ pub struct Screw {
     /// Cut the thread into the shank.
     #[serde(default)]
     pub thread: bool,
-    /// The angle about the axis the thread starts at; see
-    /// `geom::THREAD_PHASE_DEG` for why it is offered.
-    #[serde(default = "phase")]
-    pub thread_phase: f64,
 }
 
 fn yes() -> bool {
     true
-}
-
-fn phase() -> f64 {
-    geom::THREAD_PHASE_DEG
 }
 
 impl Screw {
@@ -176,7 +168,6 @@ impl Screw {
             custom: false,
             socket: defaults.socket,
             thread: defaults.thread,
-            thread_phase: geom::THREAD_PHASE_DEG,
         };
         screw.refill();
         screw.length = default_length(screw.d);
@@ -296,6 +287,28 @@ impl Screw {
         ]
     }
 
+    /// What goes on after the thread is cut: a hex bolt's head, fused on
+    /// and crowned by an envelope tall enough to leave the shank alone.
+    fn head_ops(&self) -> Vec<SolidOp> {
+        match self.head {
+            Head::Hex => {
+                let e = across_corners(self.dk);
+                let crown = (0.08 * self.dk).min(0.3 * self.k);
+                vec![
+                    geom::prism(
+                        &geom::hexagon(self.dk),
+                        Vec::new(),
+                        0.0,
+                        self.k,
+                        BooleanOp::Fuse,
+                    ),
+                    geom::crown(e, -self.length - 1.0, self.k, crown, 30.0, false, true),
+                ]
+            }
+            _ => Vec::new(),
+        }
+    }
+
     pub fn body_ops(&self) -> Vec<SolidOp> {
         let (r, l, c) = (self.d / 2.0, self.length, self.tip_chamfer());
         match self.head {
@@ -341,28 +354,19 @@ impl Screw {
                 )]
             }
             Head::Hex => {
-                let e = across_corners(self.dk);
-                let crown = (0.08 * self.dk).min(0.3 * self.k);
-                vec![
-                    geom::prism(
-                        &geom::hexagon(self.dk),
-                        Vec::new(),
-                        0.0,
-                        self.k,
-                        BooleanOp::NewSolid,
-                    ),
-                    geom::crown(e, 0.0, self.k, crown, 30.0, false, true),
-                    revolve(
-                        &[
-                            [0.0, -l],
-                            [r - c, -l],
-                            [r, -l + c],
-                            [r, self.k / 2.0],
-                            [0.0, self.k / 2.0],
-                        ],
-                        BooleanOp::Fuse,
-                    ),
-                ]
+                // The shank alone, reaching up into the head; the head is
+                // fused on after the thread (`head_ops`), so the groove is
+                // cut into a plain body of revolution.
+                vec![revolve(
+                    &[
+                        [0.0, -l],
+                        [r - c, -l],
+                        [r, -l + c],
+                        [r, self.k / 2.0],
+                        [0.0, self.k / 2.0],
+                    ],
+                    BooleanOp::NewSolid,
+                )]
             }
             Head::Set => {
                 let point = (self.d - self.dk) / 2.0;
@@ -443,7 +447,7 @@ impl Part for Screw {
     fn ops(&self) -> Vec<SolidOp> {
         let mut ops = self.body_ops();
         // The thread first, while the solid is a plain body of revolution;
-        // the recess then cuts the head alone.
+        // a hex head goes on after it, and the recess cuts the head alone.
         if self.thread {
             let shank = self.shank_length();
             let run = self.threaded();
@@ -454,9 +458,9 @@ impl Part for Screw {
                 -(shank - run),
                 run,
                 lead_in,
-                self.thread_phase,
             ));
         }
+        ops.extend(self.head_ops());
         if self.head.has_socket() && self.socket {
             let top = if self.head == Head::Set { 0.0 } else { self.k };
             ops.push(geom::hex_socket(self.s, self.t, top));
@@ -520,14 +524,8 @@ impl Part for Screw {
                 0.0,
                 1,
             ));
-            options.push(super::angle(
-                ctx,
-                "thread_phase",
-                "Thread start angle",
-                self.thread_phase,
-            ));
             options.push(super::text(
-                "A modelled thread takes the kernel a while on a long screw. Should the kernel refuse it, change the start angle.",
+                "A modelled thread takes the kernel a while on a long screw.",
             ));
         }
         widgets.push(group("Options", true, options));
@@ -545,7 +543,6 @@ impl Part for Screw {
             length("s", "Hex key"),
             length("t", "Socket depth"),
             length("thread_length", "Thread length"),
-            super::angle_param("thread_phase", "Thread start angle"),
         ]
     }
 
@@ -583,7 +580,6 @@ impl Part for Screw {
                 "s" => self.s = *value,
                 "t" => self.t = *value,
                 "thread_length" => self.thread_length = *value,
-                "thread_phase" => self.thread_phase = *value,
                 _ => return false,
             },
             PanelEvent::Toggle { id, on } => match id.as_str() {
@@ -652,9 +648,6 @@ impl Part for Screw {
         }
         if let Some(v) = arg_f64(args, "thread_length") {
             screw.thread_length = v;
-        }
-        if let Some(v) = arg_f64(args, "thread_phase") {
-            screw.thread_phase = v;
         }
         if let Some(on) = arg_bool(args, "socket") {
             screw.socket = on;
@@ -913,16 +906,29 @@ mod tests {
     }
 
     #[test]
-    fn a_hex_bolt_is_a_crowned_prism_with_a_shank_fused_on() {
+    fn a_hex_bolt_is_a_shank_with_its_head_fused_on_and_crowned() {
         let ops = m3(Head::Hex).ops();
         let roles: Vec<_> = ops.iter().map(|op| op.boolean_op()).collect();
         assert_eq!(
             roles,
             [
                 Some(BooleanOp::NewSolid),
-                Some(BooleanOp::Common),
-                Some(BooleanOp::Fuse)
+                Some(BooleanOp::Fuse),
+                Some(BooleanOp::Common)
             ]
+        );
+        let mut threaded = m3(Head::Hex);
+        threaded.thread = true;
+        let roles: Vec<_> = threaded.ops().iter().map(|op| op.boolean_op()).collect();
+        assert_eq!(
+            roles,
+            [
+                Some(BooleanOp::NewSolid),
+                Some(BooleanOp::Cut),
+                Some(BooleanOp::Fuse),
+                Some(BooleanOp::Common)
+            ],
+            "the thread is cut before the head goes on"
         );
     }
 
@@ -946,14 +952,14 @@ mod tests {
         let ops = screw.ops();
         assert_eq!(ops.len(), 3, "body, thread, then the recess");
         let (height, z_top) = helix(&ops);
-        // 12 of thread, a pitch of lead-in, stopping a pitch and a half short.
-        assert!((height - 11.75).abs() < 1e-9, "{height}");
+        // 12 of thread, a pitch of lead-in and a pitch past the tip.
+        assert!((height - 13.0).abs() < 1e-9, "{height}");
         assert!((z_top - -8.0).abs() < 1e-9, "starts 8 below the head");
         screw.length = 8.0;
         let (height, _) = helix(&screw.ops());
         assert!(
-            (height - 6.5).abs() < 1e-9,
-            "threaded to the head, a pitch and a half clear of both ends: {height}"
+            (height - 8.25).abs() < 1e-9,
+            "threaded to the head from half a pitch down: {height}"
         );
     }
 
