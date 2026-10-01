@@ -749,7 +749,12 @@ impl Bench for HardwareBench {
             return Some(format!("Edit {}", opened.family().name()));
         }
         let undone = if self.fresh {
-            host::remove_feature(&id)
+            // The tool made a body for it too; it goes with the part.
+            let body = host::feature(&id).and_then(|n| n.body);
+            host::remove_feature(&id).and_then(|()| match body {
+                Some(body) => host::call("doc.remove_body", json!({"id": body})).map(|_| ()),
+                None => Ok(()),
+            })
         } else {
             host::set_feature_data(&id, opened.to_value())
         };
