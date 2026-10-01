@@ -20,7 +20,3 @@ serde = { version = "1", features = ["derive"] }
 [profile.dev.package."*"]
 opt-level = 3
 
-# The kernel as checked out beside the repositories, while a fix is not yet
-# on crates.io; drop this to test against the kernel printCAD pins.
-[patch.crates-io]
-ogeom = { path = "../../../openGeometry/crates/ogeom" }
