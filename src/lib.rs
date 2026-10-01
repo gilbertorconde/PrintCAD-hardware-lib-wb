@@ -326,8 +326,6 @@ struct HardwareBench {
     fresh: bool,
     /// The field last changed, whose measure the drawing emphasises.
     focus: Option<String>,
-    /// The active feature last seen, so selecting a part opens it once.
-    seen_active: Option<String>,
     defaults: Defaults,
 }
 
@@ -616,6 +614,11 @@ impl Bench for HardwareBench {
                 self.add(part, &format!("New {}", def.label.to_lowercase()));
                 true
             }
+            // A double click on a part's tree row.
+            Event::EditFeature { feature } => {
+                self.open(feature, false);
+                true
+            }
             Event::Key { key, down: true } if key == "Escape" && self.editing.is_some() => {
                 self.task_close(false);
                 true
@@ -624,15 +627,7 @@ impl Bench for HardwareBench {
         }
     }
 
-    fn frame(&mut self, pointer: &Pointer) -> Frame {
-        if pointer.active_feature != self.seen_active {
-            self.seen_active = pointer.active_feature.clone();
-            if self.editing.is_none()
-                && let Some(id) = pointer.active_feature.clone()
-            {
-                self.open(&id, false);
-            }
-        }
+    fn frame(&mut self, _pointer: &Pointer) -> Frame {
         let mut frame = Frame::default();
         let Some((id, part)) = self.edited() else {
             self.editing = None;
@@ -752,7 +747,7 @@ impl Bench for HardwareBench {
             // The tool made a body for it too; it goes with the part.
             let body = host::feature(&id).and_then(|n| n.body);
             host::remove_feature(&id).and_then(|()| match body {
-                Some(body) => host::call("doc.remove_body", json!({"id": body})).map(|_| ()),
+                Some(body) => host::remove_body(&body),
                 None => Ok(()),
             })
         } else {

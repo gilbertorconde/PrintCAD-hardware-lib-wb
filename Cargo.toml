@@ -10,7 +10,13 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
+# The SDK comes from the printCAD repository. While it needs what is not
+# on the published master yet (today: the edit-feature event and
+# doc.remove_body), it is read from the checkout beside this one; to
+# release, switch back to
+#   printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
+# and run `cargo update -p printcad-bench-sdk` once printCAD is pushed.
+printcad-bench-sdk = { path = "../printCAD/sdk/printcad-bench-sdk" }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]
