@@ -79,16 +79,23 @@ impl Part for Spring {
     }
 
     fn ops(&self) -> Vec<SolidOp> {
-        // The wire's section sits on the XY plane a wire's radius up,
-        // out at the mean radius, and climbs its helix about Z.
+        // The wire's section sits in a plane through the axis, out at the
+        // mean radius and a wire's radius up, and is carried round a helix
+        // about Z: swept square to its path, as a thread's profile is. (In
+        // the plane square to the axis it would stay level as it climbed
+        // and sweep a ribbon, not a wire.)
         let r = self.mean_radius();
         vec![SolidOp::Sweep {
             profile: Profile {
-                plane: geom::xy(self.wire / 2.0),
-                wires: vec![ProfileWire::new(vec![geom::circle_at([r, 0.0], self.wire)])],
+                plane: geom::section(),
+                wires: vec![ProfileWire::new(vec![geom::circle_at(
+                    [r, self.wire / 2.0],
+                    self.wire,
+                )])],
             },
-            kind: SweepKind::HelixNormal {
+            kind: SweepKind::Helix {
                 axis_origin: [0.0, 0.0],
+                axis_dir: [0.0, 1.0],
                 pitch: self.pitch(),
                 height: self.length - self.wire,
                 left_handed: false,
@@ -216,7 +223,7 @@ mod tests {
         assert_eq!(spring.problem(), None);
         assert_eq!(spring.pitch(), 3.0);
         let SolidOp::Sweep {
-            kind: SweepKind::HelixNormal { height, turns, .. },
+            kind: SweepKind::Helix { height, turns, .. },
             ..
         } = &spring.ops()[0]
         else {
