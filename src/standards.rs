@@ -484,8 +484,11 @@ pub struct ExtrusionSeries {
     pub opening: f64,
     /// The wall over the slot cavity.
     pub lip: f64,
-    /// The cavity's width.
+    /// The cavity's width behind the lip.
     pub cavity: f64,
+    /// The depth at which the cavity's walls turn in at 45° toward the
+    /// floor, leaving a web between neighbouring cavities.
+    pub shoulder: f64,
     /// The slot's depth from the surface to the cavity's floor.
     pub depth: f64,
     /// The hole down the cell's centre.
@@ -499,6 +502,7 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         opening: 6.2,
         lip: 1.8,
         cavity: 11.0,
+        shoulder: 3.0,
         depth: 6.0,
         hole: 4.2,
         corner: 1.5,
@@ -508,6 +512,7 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         opening: 8.2,
         lip: 2.0,
         cavity: 16.5,
+        shoulder: 4.0,
         depth: 8.5,
         hole: 6.8,
         corner: 2.0,
@@ -517,6 +522,7 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         opening: 8.2,
         lip: 3.0,
         cavity: 20.0,
+        shoulder: 6.5,
         depth: 12.5,
         hole: 10.2,
         corner: 2.0,
@@ -752,7 +758,11 @@ mod tests {
         }
         for series in EXTRUSIONS {
             assert!(series.cavity > series.opening);
-            assert!(series.depth > series.lip);
+            assert!(series.depth > series.shoulder && series.shoulder > series.lip);
+            // The walls meet the floor before they meet each other.
+            assert!(series.cavity - 2.0 * (series.depth - series.shoulder) > 0.0);
+            // Neighbouring cavities leave a web between them.
+            assert!(series.cavity / 2.0 < series.cell as f64 / 2.0 - series.shoulder);
             assert!(series.cavity < series.cell as f64);
         }
         for row in INSERTS {

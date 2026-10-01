@@ -315,7 +315,7 @@ const LENGTH_KEYS: [&str; 31] = [
     "w",
     "wire",
     "lead",
-    "size_mm",
+    "shoulder",
 ];
 
 #[derive(Default)]

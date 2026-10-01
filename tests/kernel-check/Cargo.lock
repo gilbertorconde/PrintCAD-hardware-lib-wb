@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-algo"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "nalgebra",
  "ogeom-core",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-bool"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "robust",
  "smallvec",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-doc"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-core",
  "ogeom-geom",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-fillet"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-geom"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "nalgebra",
  "ogeom-core",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-heal"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "nalgebra",
  "ogeom-algo",
@@ -394,7 +394,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-hlr"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-intersect"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "nalgebra",
  "ogeom-core",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-io"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",
@@ -434,7 +434,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-math"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "nalgebra",
  "ogeom-core",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-mesh"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-core",
  "ogeom-geom",
@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-offset"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ogeom-algo",
  "ogeom-bool",
@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "ogeom-topo"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "hashbrown 0.16.1",
  "indexmap",

@@ -32,6 +32,10 @@ pub struct Extrusion {
     pub opening: f64,
     pub lip: f64,
     pub cavity: f64,
+    /// Where the cavity's walls turn in at 45° toward the floor; 0 in a
+    /// part saved before it was drawn, read as midway down.
+    #[serde(default)]
+    pub shoulder: f64,
     pub depth: f64,
     pub hole: f64,
     pub corner: f64,
@@ -51,6 +55,7 @@ impl Extrusion {
             opening: 0.0,
             lip: 0.0,
             cavity: 0.0,
+            shoulder: 0.0,
             depth: 0.0,
             hole: 0.0,
             corner: 0.0,
@@ -70,9 +75,24 @@ impl Extrusion {
         self.opening = t.opening;
         self.lip = t.lip;
         self.cavity = t.cavity;
+        self.shoulder = t.shoulder;
         self.depth = t.depth;
         self.hole = t.hole;
         self.corner = t.corner;
+    }
+
+    /// The shoulder's depth, midway down the cavity when none was saved.
+    fn shoulder(&self) -> f64 {
+        if self.shoulder > self.lip {
+            self.shoulder
+        } else {
+            (self.lip + self.depth) / 2.0
+        }
+    }
+
+    /// The cavity's floor width, where its 45° walls end.
+    fn floor(&self) -> f64 {
+        self.cavity - 2.0 * (self.depth - self.shoulder())
     }
 
     fn cell(&self) -> f64 {
@@ -109,18 +129,28 @@ impl Extrusion {
             points.push(add(*corner, *t, r));
             for cell in 0..*cells {
                 let centre = add(*corner, *t, c * (cell as f64 + 0.5));
-                let (o, lip, cav, depth) =
-                    (self.opening / 2.0, self.lip, self.cavity / 2.0, self.depth);
+                let (o, lip, cav, shoulder, depth, floor) = (
+                    self.opening / 2.0,
+                    self.lip,
+                    self.cavity / 2.0,
+                    self.shoulder(),
+                    self.depth,
+                    self.floor() / 2.0,
+                );
                 let lipped = |side: f64, deep: f64| add(add(centre, *t, side), *n, -deep);
                 if self.v_slot {
                     points.push(lipped(-(o + lip), 0.0));
                 } else {
                     points.push(lipped(-o, 0.0));
                 }
+                // Under the lip the cavity is at its widest down to the
+                // shoulder, then its walls run in at 45° to the floor.
                 points.push(lipped(-o, lip));
                 points.push(lipped(-cav, lip));
-                points.push(lipped(-cav, depth));
-                points.push(lipped(cav, depth));
+                points.push(lipped(-cav, shoulder));
+                points.push(lipped(-floor, depth));
+                points.push(lipped(floor, depth));
+                points.push(lipped(cav, shoulder));
                 points.push(lipped(cav, lip));
                 points.push(lipped(o, lip));
                 if self.v_slot {
@@ -215,6 +245,19 @@ impl Part for Extrusion {
         if self.hole < 0.0 || self.hole >= c - 2.0 * self.depth {
             return Some("The centre hole runs into the slots.".into());
         }
+        let shoulder = self.shoulder();
+        if shoulder <= self.lip || shoulder >= self.depth {
+            return Some("The shoulder must lie between the lip and the floor.".into());
+        }
+        if self.floor() < 1.0 {
+            return Some(
+                "The cavity's walls meet before its floor: a deeper shoulder or a wider cavity."
+                    .into(),
+            );
+        }
+        if self.cavity / 2.0 >= c / 2.0 - shoulder {
+            return Some("The cavities of neighbouring faces run into each other.".into());
+        }
         let v = if self.v_slot { self.lip } else { 0.0 };
         if self.opening / 2.0 + v + self.corner >= c / 2.0 {
             return Some("The slot opening runs into the corner.".into());
@@ -279,6 +322,14 @@ impl Part for Extrusion {
             dims.push(number(ctx, "opening", "Slot opening", self.opening, 0.1, 2));
             dims.push(number(ctx, "lip", "Lip thickness", self.lip, 0.1, 2));
             dims.push(number(ctx, "cavity", "Cavity width", self.cavity, 0.1, 2));
+            dims.push(number(
+                ctx,
+                "shoulder",
+                "Shoulder depth",
+                self.shoulder(),
+                0.1,
+                2,
+            ));
             dims.push(number(ctx, "depth", "Slot depth", self.depth, 0.1, 2));
             dims.push(number(ctx, "hole", "Centre hole", self.hole, 0.0, 2));
             dims.push(number(ctx, "corner", "Corner radius", self.corner, 0.0, 2));
@@ -296,6 +347,7 @@ impl Part for Extrusion {
             length("opening", "Slot opening"),
             length("lip", "Lip"),
             length("cavity", "Cavity"),
+            length("shoulder", "Shoulder depth"),
             length("depth", "Slot depth"),
             length("hole", "Centre hole"),
             length("corner", "Corner radius"),
@@ -321,6 +373,7 @@ impl Part for Extrusion {
                 "opening" => self.opening = *value,
                 "lip" => self.lip = *value,
                 "cavity" => self.cavity = *value,
+                "shoulder" => self.shoulder = *value,
                 "depth" => self.depth = *value,
                 "hole" => self.hole = *value,
                 "corner" => self.corner = *value,
@@ -392,6 +445,7 @@ impl Part for Extrusion {
             ("opening", &mut e.opening),
             ("lip", &mut e.lip),
             ("cavity", &mut e.cavity),
+            ("shoulder", &mut e.shoulder),
             ("depth", &mut e.depth),
             ("hole", &mut e.hole),
             ("corner", &mut e.corner),
@@ -439,10 +493,10 @@ impl Extrusion {
         let o = self.opening / 2.0;
         s.width("opening", cx - o, cx + o, -h, -off, fmt(self.opening));
         let cav = self.cavity / 2.0;
-        s.hidden(&[[cx - cav, -h + self.depth], [cx - cav, -h + self.lip]]);
+        s.hidden(&[[cx - cav, -h + self.shoulder()], [cx - cav, -h + self.lip]]);
         s.callout(
             "depth",
-            [cx + cav, -h + self.depth],
+            [cx + self.floor() / 2.0, -h + self.depth],
             [w + off * 1.6, -h + off * 1.2],
             format!("depth {}", fmt(self.depth)),
         );
@@ -477,7 +531,7 @@ mod tests {
         let (outline, holes) = e.outline();
         assert_eq!(holes, [[0.0, 0.0]]);
         // 4 sides × (start, 8 slot points, end, 3 arc points).
-        assert_eq!(outline.len(), 4 * 13);
+        assert_eq!(outline.len(), 4 * 15);
         let xs = outline.iter().map(|p| p[0]);
         assert!(xs.clone().fold(f64::MIN, f64::max) <= 10.0 + 1e-9);
         assert!(xs.fold(f64::MAX, f64::min) >= -10.0 - 1e-9);
@@ -491,7 +545,7 @@ mod tests {
         assert_eq!(e.label(), "2040 × 50");
         let (outline, holes) = e.outline();
         assert_eq!(holes.len(), 2);
-        assert_eq!(outline.len(), 4 * 5 + 6 * 8);
+        assert_eq!(outline.len(), 4 * 5 + 6 * 10);
         assert_eq!(e.ops().len(), 1);
     }
 
@@ -521,6 +575,66 @@ mod tests {
         .unwrap();
         assert_eq!((e.cells_x, e.cells_y, e.along.as_str()), (1, 2, "Y"));
         assert!(Extrusion::with_args(&json!({"profile": "2030"}), &Defaults::default()).is_err());
+    }
+
+    /// Whether segments `a`–`b` and `c`–`d` cross.
+    fn crosses(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+        let orient = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+            (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        };
+        let (o1, o2) = (orient(a, b, c), orient(a, b, d));
+        let (o3, o4) = (orient(c, d, a), orient(c, d, b));
+        o1 * o2 < -1e-12 && o3 * o4 < -1e-12
+    }
+
+    fn area(points: &[[f64; 2]]) -> f64 {
+        let n = points.len();
+        (0..n)
+            .map(|i| {
+                let (p, q) = (points[i], points[(i + 1) % n]);
+                p[0] * q[1] - q[0] * p[1]
+            })
+            .sum::<f64>()
+            / 2.0
+    }
+
+    #[test]
+    fn an_outline_never_crosses_itself_and_leaves_webs_between_the_slots() {
+        for (series, cx, cy, v) in [
+            (20, 1, 1, false),
+            (20, 1, 1, true),
+            (20, 1, 2, false),
+            (30, 1, 1, false),
+            (30, 2, 1, true),
+            (40, 1, 1, false),
+            (40, 1, 2, false),
+        ] {
+            let mut e = Extrusion::new(series, cx, cy, 10.0);
+            e.v_slot = v;
+            assert_eq!(e.problem(), None, "{series} {cx}x{cy}");
+            let (outline, _) = e.outline();
+            let n = outline.len();
+            for i in 0..n {
+                for j in i + 2..n {
+                    if i == 0 && j == n - 1 {
+                        continue;
+                    }
+                    assert!(
+                        !crosses(
+                            outline[i],
+                            outline[(i + 1) % n],
+                            outline[j],
+                            outline[(j + 1) % n]
+                        ),
+                        "{series} {cx}x{cy}: segments {i} and {j} cross"
+                    );
+                }
+            }
+            // The section is between a third and two thirds of its cell: a
+            // real profile's weight, not a frame of corners.
+            let share = area(&outline) / (e.width() * e.height());
+            assert!((0.35..0.7).contains(&share), "{series} {cx}x{cy}: {share}");
+        }
     }
 
     #[test]
