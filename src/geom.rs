@@ -205,14 +205,19 @@ pub fn hex_socket(s: f64, t: f64, z: f64) -> SolidOp {
 
 /// A thread's groove, cut along a helix. `open` is the radius the groove
 /// opens at (a screw's outside, a nut's bore) and `bottom` the radius it
-/// reaches; it is wide at the opening and nearly sharp at the bottom, at
-/// 60° flanks. It runs from `z_top` down `length` and a pitch past, out
-/// through the end. With `lead_in` it starts a pitch above, so the groove
-/// enters a plain shank cleanly; without, half a pitch down, so its first
-/// turn stays within the face it starts under.
+/// reaches, `flat` the width of its floor there and `flank_deg` the angle
+/// of each flank to the radial (30° for the ISO profile). Past the
+/// surface the groove keeps its width, so no turn reaches the next. It
+/// runs from `z_top` down `length` and a pitch past, out through the end.
+/// With `lead_in` it starts a pitch above, so the groove enters a plain
+/// shank cleanly; without, half a pitch down, so its first turn stays
+/// within the face it starts under.
+#[allow(clippy::too_many_arguments)]
 pub fn thread_groove(
     open: f64,
     bottom: f64,
+    flat: f64,
+    flank_deg: f64,
     pitch: f64,
     z_top: f64,
     length: f64,
@@ -233,13 +238,25 @@ pub fn thread_groove(
     } else {
         (open - 0.5 * pitch).max(0.1 * open)
     };
-    let crest = pitch / 16.0;
-    let root = (crest + (open - bottom).abs() * (30f64).to_radians().tan()).min(0.45 * pitch);
+    // The floor's half-width, and the groove's where it leaves the
+    // surface; the knee sits a touch outside the surface, so no edge of
+    // the sweep lies in it.
+    // An internal groove's knee sits well into the bore: of the knees
+    // tried, that is the one the kernel's boolean takes on every nut.
+    let crest = flat / 2.0;
+    let knee = if outward {
+        open + 0.05 * pitch
+    } else {
+        open - 0.25 * pitch
+    };
+    let root = (crest + (knee - bottom).abs() * flank_deg.to_radians().tan()).min(0.47 * pitch);
     let start = if lead_in { -pitch } else { 0.5 * pitch };
     let corners = [
         [over, start - root],
+        [knee, start - root],
         [bottom, start - crest],
         [bottom, start + crest],
+        [knee, start + root],
         [over, start + root],
     ];
     SolidOp::Sweep {
@@ -263,11 +280,14 @@ pub fn thread_groove(
 }
 
 /// An external thread of major diameter `d` on a shank, from `z_top`
-/// down `length`.
+/// down `length`: the ISO basic profile, 5/8 H deep with a root flat of
+/// a quarter pitch, leaving a crest flat of an eighth.
 pub fn external_thread(d: f64, pitch: f64, z_top: f64, length: f64, lead_in: bool) -> SolidOp {
     thread_groove(
         d / 2.0,
-        d / 2.0 - 0.6134 * pitch,
+        d / 2.0 - THREAD_DEPTH * pitch,
+        pitch / 4.0,
+        30.0,
         pitch,
         z_top,
         length,
@@ -277,10 +297,25 @@ pub fn external_thread(d: f64, pitch: f64, z_top: f64, length: f64, lead_in: boo
 }
 
 /// An internal thread in a bore of minor diameter `minor`, out to major
-/// `d`, through a nut from `z_top` down `length`.
+/// `d`, through a nut from `z_top` down `length`: the ISO basic profile,
+/// its root at the major nearly sharp.
 pub fn internal_thread(d: f64, minor: f64, pitch: f64, z_top: f64, length: f64) -> SolidOp {
-    thread_groove(minor / 2.0, d / 2.0, pitch, z_top, length, true, false)
+    thread_groove(
+        minor / 2.0,
+        d / 2.0,
+        pitch / 16.0,
+        30.0,
+        pitch,
+        z_top,
+        length,
+        true,
+        false,
+    )
 }
+
+/// The depth of an ISO thread as a share of its pitch: 5/8 of the sharp
+/// profile's height, `H = 0.866 p`, between the crest and root flats.
+pub const THREAD_DEPTH: f64 = 0.5413;
 
 /// Points along an arc from angle `a0` to `a1` about `center`, for
 /// drawing (not for the kernel, which takes an arc as three points).

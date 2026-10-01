@@ -260,6 +260,8 @@ impl Part for Rod {
             ops.push(geom::thread_groove(
                 r,
                 r - 0.5 * self.pitch,
+                0.37 * self.pitch,
+                15.0,
                 self.lead,
                 l,
                 l,

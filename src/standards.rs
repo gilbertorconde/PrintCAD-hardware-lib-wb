@@ -534,74 +534,51 @@ pub fn extrusion(cell: u32) -> Option<&'static ExtrusionSeries> {
 }
 
 /// A heat-set threaded insert for printed parts, as the common brass
-/// ones are made: the outside, the standard and short lengths, and the
-/// hole to drive it into.
+/// ones are made (CNC Kitchen, Ruthex): a pilot end that finds the hole,
+/// two knurled bands, the upper the wider, and the hole to drive it into,
+/// which the pilot fits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InsertRow {
     pub size: &'static str,
     pub d: f64,
     pub pitch: f64,
+    /// Across the upper knurl.
     pub outer: f64,
+    /// Across the pilot end and the lower knurl's root.
+    pub pilot: f64,
     pub length: f64,
     pub short: f64,
     pub hole: f64,
 }
 
+const fn insert(
+    size: &'static str,
+    d: f64,
+    pitch: f64,
+    outer: f64,
+    pilot: f64,
+    length: f64,
+    short: f64,
+) -> InsertRow {
+    InsertRow {
+        size,
+        d,
+        pitch,
+        outer,
+        pilot,
+        length,
+        short,
+        hole: pilot,
+    }
+}
+
 pub const INSERTS: [InsertRow; 6] = [
-    InsertRow {
-        size: "M2",
-        d: 2.0,
-        pitch: 0.4,
-        outer: 3.2,
-        length: 4.0,
-        short: 3.0,
-        hole: 3.0,
-    },
-    InsertRow {
-        size: "M2.5",
-        d: 2.5,
-        pitch: 0.45,
-        outer: 3.5,
-        length: 5.7,
-        short: 4.0,
-        hole: 3.4,
-    },
-    InsertRow {
-        size: "M3",
-        d: 3.0,
-        pitch: 0.5,
-        outer: 4.0,
-        length: 5.7,
-        short: 4.0,
-        hole: 4.0,
-    },
-    InsertRow {
-        size: "M4",
-        d: 4.0,
-        pitch: 0.7,
-        outer: 5.6,
-        length: 8.1,
-        short: 4.7,
-        hole: 5.6,
-    },
-    InsertRow {
-        size: "M5",
-        d: 5.0,
-        pitch: 0.8,
-        outer: 6.4,
-        length: 9.5,
-        short: 5.8,
-        hole: 6.4,
-    },
-    InsertRow {
-        size: "M6",
-        d: 6.0,
-        pitch: 1.0,
-        outer: 8.0,
-        length: 12.7,
-        short: 8.0,
-        hole: 8.0,
-    },
+    insert("M2", 2.0, 0.4, 3.5, 3.2, 4.0, 3.0),
+    insert("M2.5", 2.5, 0.45, 4.0, 3.6, 5.7, 4.0),
+    insert("M3", 3.0, 0.5, 4.6, 4.0, 5.7, 4.0),
+    insert("M4", 4.0, 0.7, 6.0, 5.6, 8.1, 4.7),
+    insert("M5", 5.0, 0.8, 7.1, 6.4, 9.5, 5.8),
+    insert("M6", 6.0, 1.0, 8.4, 8.0, 12.7, 8.0),
 ];
 
 /// A rolling bearing by its designation: bore, outside and width.
@@ -706,7 +683,7 @@ pub const LEAD_SCREWS: [(&str, f64, f64, f64); 4] = [
 
 /// The minor diameter of an internal metric thread of `d` and `pitch`.
 pub fn internal_minor(d: f64, pitch: f64) -> f64 {
-    d - 1.0825 * pitch
+    d - 2.0 * crate::geom::THREAD_DEPTH * pitch
 }
 
 #[cfg(test)]
@@ -766,7 +743,7 @@ mod tests {
             assert!(series.cavity < series.cell as f64);
         }
         for row in INSERTS {
-            assert!(row.outer > row.d && row.short <= row.length);
+            assert!(row.outer > row.pilot && row.pilot > row.d && row.short <= row.length);
         }
         for row in BALL_BEARINGS.iter().chain(&LINEAR_BEARINGS) {
             assert!(row.outer > row.bore && row.width > 0.0, "{}", row.name);

@@ -20,7 +20,11 @@ pub struct Insert {
     pub size: String,
     pub d: f64,
     pub pitch: f64,
+    /// Across the upper knurl.
     pub outer: f64,
+    /// Across the pilot end; 0 in a part saved before it was drawn.
+    #[serde(default)]
+    pub pilot: f64,
     pub length: f64,
     /// The hole it is driven into.
     pub hole: f64,
@@ -40,6 +44,7 @@ impl Insert {
             d: 0.0,
             pitch: 0.0,
             outer: 0.0,
+            pilot: 0.0,
             length: 0.0,
             hole: 0.0,
             short: false,
@@ -72,8 +77,31 @@ impl Insert {
         self.d = row.d;
         self.pitch = row.pitch;
         self.outer = row.outer;
+        self.pilot = row.pilot;
         self.length = if self.short { row.short } else { row.length };
         self.hole = row.hole;
+    }
+
+    /// The pilot's diameter, a little under the knurl's when none was
+    /// saved.
+    fn pilot(&self) -> f64 {
+        if self.pilot > 0.0 {
+            self.pilot
+        } else {
+            self.outer - 0.4
+        }
+    }
+
+    /// Where the bands lie up the insert, as shares of its length: the
+    /// pilot, the lower knurl, the groove, the upper knurl, the collar.
+    const PILOT: f64 = 0.12;
+    const LOWER: f64 = 0.45;
+    const GROOVE: f64 = 0.55;
+    const UPPER: f64 = 0.92;
+
+    /// How many facets a knurl band has round the insert.
+    fn facets(&self) -> u32 {
+        ((std::f64::consts::PI * self.outer / 0.9).round() as u32).clamp(12, 24)
     }
 
     fn minor(&self) -> f64 {
@@ -100,8 +128,11 @@ impl Part for Insert {
         if self.d <= 0.0 || self.pitch <= 0.0 || self.length <= 0.0 {
             return Some("The thread and the length must be more than 0.".into());
         }
-        if self.outer <= self.d + 0.4 {
+        if self.pilot() <= self.d + 0.4 {
             return Some("The wall around the thread is thinner than 0.2 mm.".into());
+        }
+        if self.outer <= self.pilot() {
+            return Some("The knurl must be wider than the pilot.".into());
         }
         if self.minor() <= 0.0 {
             return Some("The pitch is too coarse for the thread's diameter.".into());
@@ -114,29 +145,42 @@ impl Part for Insert {
     }
 
     fn ops(&self) -> Vec<SolidOp> {
-        let (r0, r1, l) = (self.minor() / 2.0, self.outer / 2.0, self.length);
-        let taper = (0.3f64).min(l / 6.0).min((r1 - r0) * 0.8);
-        // Two knurled bands with a smooth groove between, and a smooth
-        // band at the top.
-        let g = (0.1f64).min((r1 - r0) * 0.3);
-        let (g0, g1) = (0.42 * l, 0.58 * l);
-        let top = 0.85 * l;
+        let (r0, rp, ro, l) = (
+            self.minor() / 2.0,
+            self.pilot() / 2.0,
+            self.outer / 2.0,
+            self.length,
+        );
+        let (z1, z2, z3, z4) = (
+            Self::PILOT * l,
+            Self::LOWER * l,
+            Self::GROOVE * l,
+            Self::UPPER * l,
+        );
+        // The lower knurl rises from the pilot's radius; the upper from a
+        // root below the knurl's crest. The groove and the collar are
+        // plain.
+        let rib = ((ro - rp) * 0.6).clamp(0.1, 0.25);
+        let lower_crest = rp + rib;
+        let (upper_root, upper_crest) = (ro - rib, ro);
+        let lead = (0.3f64).min(l / 8.0).min((rp - r0) * 0.8);
+        let groove = (0.1f64).min((rp - r0) * 0.3);
         let mut ops = vec![revolve(
             &[
                 [r0, 0.0],
-                [r1 - taper, 0.0],
-                [r1, taper],
-                [r1, g0],
-                [r1 - g, g0],
-                [r1 - g, g1],
-                [r1, g1],
-                [r1, top],
-                [r1 - g, top],
-                [r1 - g, l],
+                [rp - lead, 0.0],
+                [rp, lead],
+                [rp, z2],
+                [rp - groove, z2],
+                [rp - groove, z3],
+                [upper_root, z3],
+                [upper_root, l],
                 [r0, l],
             ],
             BooleanOp::NewSolid,
         )];
+        // The thread first, into the plain core: cut after the bands are on,
+        // it is one the kernel's boolean will not resolve.
         if self.thread {
             ops.push(geom::internal_thread(
                 self.d,
@@ -144,6 +188,24 @@ impl Part for Insert {
                 self.pitch,
                 l,
                 l,
+            ));
+        }
+        // The knurls: a faceted band fused on each, its corners at the
+        // crest and its flats a little under, with its hole within the
+        // wall, clear of the bore's face. (A serrated ring, true ribs, is
+        // what the kernel's boolean will not fuse on.) Each band stops a
+        // hair short of the step the core makes at the groove, so no face
+        // of one lies in a face of the other.
+        let hole = r0 + (rp - r0) / 2.0;
+        let gap = 0.05;
+        for (crest, from, to) in [(lower_crest, z1, z2 - gap), (upper_crest, z3 + gap, z4)] {
+            let across = 2.0 * crest * (std::f64::consts::PI / f64::from(self.facets())).cos();
+            ops.push(geom::prism(
+                &geom::regular(self.facets(), across),
+                vec![geom::circle(2.0 * hole)],
+                from,
+                to - from,
+                BooleanOp::Fuse,
             ));
         }
         ops
@@ -174,7 +236,8 @@ impl Part for Insert {
         if self.custom {
             dims.push(number(ctx, "d", "Thread diameter", self.d, 0.1, 2));
             dims.push(number(ctx, "pitch", "Pitch", self.pitch, 0.05, 2));
-            dims.push(number(ctx, "outer", "Outside", self.outer, 0.1, 2));
+            dims.push(number(ctx, "outer", "Knurl diameter", self.outer, 0.1, 2));
+            dims.push(number(ctx, "pilot", "Pilot diameter", self.pilot(), 0.1, 2));
             dims.push(number(ctx, "length", "Length", self.length, 0.1, 2));
             dims.push(number(ctx, "hole", "Hole", self.hole, 0.1, 2));
         }
@@ -192,7 +255,8 @@ impl Part for Insert {
         vec![
             length("d", "Thread diameter"),
             length("pitch", "Pitch"),
-            length("outer", "Outside"),
+            length("outer", "Knurl diameter"),
+            length("pilot", "Pilot diameter"),
             length("length", "Length"),
             length("hole", "Hole"),
         ]
@@ -222,6 +286,7 @@ impl Part for Insert {
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
                 "outer" => self.outer = *value,
+                "pilot" => self.pilot = *value,
                 "length" => self.length = *value,
                 "hole" => self.hole = *value,
                 _ => return false,
@@ -258,6 +323,7 @@ impl Part for Insert {
             ("d", &mut insert.d),
             ("pitch", &mut insert.pitch),
             ("outer", &mut insert.outer),
+            ("pilot", &mut insert.pilot),
             ("length", &mut insert.length),
             ("hole", &mut insert.hole),
         ] {
@@ -276,29 +342,77 @@ impl Part for Insert {
 impl Insert {
     fn drawing(&self, ctx: &Ctx) -> Widget {
         let mut s = Sketch::new(ctx.focus);
-        let (r0, r1, l) = (self.d / 2.0, self.outer / 2.0, self.length);
+        let (r0, rp, ro, l) = (
+            self.d / 2.0,
+            self.pilot() / 2.0,
+            self.outer / 2.0,
+            self.length,
+        );
+        let (z1, z2, z3, z4) = (
+            Self::PILOT * l,
+            Self::LOWER * l,
+            Self::GROOVE * l,
+            Self::UPPER * l,
+        );
         let off = Sketch::standoff(self.outer.max(l));
-        s.rect([-r1, 0.0], [r1, l]);
-        for y in [0.42 * l, 0.58 * l, 0.85 * l] {
-            s.line(&[[-r1, y], [r1, y]], DiagramStroke::Thin);
+        let rib = ((ro - rp) * 0.6).clamp(0.1, 0.25);
+        // The silhouette: pilot, lower knurl, groove, upper knurl, collar.
+        s.poly(
+            &[
+                [-rp, 0.0],
+                [rp, 0.0],
+                [rp, z1],
+                [rp + rib, z1],
+                [rp + rib, z2],
+                [rp, z2],
+                [rp, z3],
+                [ro, z3],
+                [ro, z4],
+                [ro - rib, z4],
+                [ro - rib, l],
+                [-(ro - rib), l],
+                [-(ro - rib), z4],
+                [-ro, z4],
+                [-ro, z3],
+                [-rp, z3],
+                [-rp, z2],
+                [-(rp + rib), z2],
+                [-(rp + rib), z1],
+                [-rp, z1],
+            ],
+            DiagramStroke::Outline,
+            false,
+        );
+        // The facets, a few of each knurl.
+        for (half, from, to) in [(rp + rib, z1, z2), (ro, z3, z4)] {
+            for i in 1..5 {
+                let x = -half + 2.0 * half * i as f64 / 5.0;
+                s.line(&[[x, from], [x, to]], DiagramStroke::Thin);
+            }
         }
         s.hidden(&[[-r0, 0.0], [-r0, l]]);
         s.hidden(&[[r0, 0.0], [r0, l]]);
         s.axis(0.0, -off * 0.4, l + off * 0.4);
-        s.width("outer", -r1, r1, l, off, format!("Ø{}", fmt(self.outer)));
+        s.width("outer", -ro, ro, l, off, format!("Ø{}", fmt(self.outer)));
         s.width(
-            "d",
-            -r0,
-            r0,
+            "pilot",
+            -rp,
+            rp,
             0.0,
             -off,
+            format!("Ø{}", fmt(self.pilot())),
+        );
+        s.height("length", ro, 0.0, l, -off, format!("L {}", fmt(l)));
+        s.callout(
+            "d",
+            [r0, l * 0.75],
+            [-ro - off * 1.8, l + off * 0.6],
             format!("{} × {}", self.size, fmt(self.pitch)),
         );
-        s.height("length", r1, 0.0, l, -off, format!("L {}", fmt(l)));
         s.callout(
             "hole",
-            [-r1, l * 0.3],
-            [-r1 - off * 1.8, -off * 0.6],
+            [-rp, z1 * 0.5],
+            [-ro - off * 1.8, -off * 0.6],
             format!("hole Ø{}", fmt(self.hole)),
         );
         s.finish("insert")
@@ -313,9 +427,12 @@ mod tests {
     #[test]
     fn an_m3_insert_is_sized_and_names_its_hole() {
         let insert = Insert::new("M3", &Defaults::default());
-        assert_eq!((insert.outer, insert.length, insert.hole), (4.0, 5.7, 4.0));
+        assert_eq!(
+            (insert.outer, insert.pilot, insert.length, insert.hole),
+            (4.6, 4.0, 5.7, 4.0)
+        );
         assert_eq!(insert.label(), "M3 insert");
-        assert_eq!(insert.ops().len(), 1);
+        assert_eq!(insert.ops().len(), 3, "the core and two knurls");
     }
 
     #[test]
@@ -332,7 +449,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(insert.length, 5.8);
-        assert_eq!(insert.ops().len(), 2);
+        let roles: Vec<_> = insert.ops().iter().map(|op| op.boolean_op()).collect();
+        assert_eq!(
+            roles,
+            [
+                Some(BooleanOp::NewSolid),
+                Some(BooleanOp::Cut),
+                Some(BooleanOp::Fuse),
+                Some(BooleanOp::Fuse)
+            ],
+            "the thread is cut before the knurls go on"
+        );
         assert!(Insert::with_args(&json!({"size": "M8"}), &Defaults::default()).is_err());
     }
 }

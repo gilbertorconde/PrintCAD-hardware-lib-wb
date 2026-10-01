@@ -17,7 +17,7 @@ number takes a formula, as printCAD's own fields do.
 | Nuts | hex, thin, nylon insert lock, square, T-slot | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557; T-nuts by extrusion series |
 | Washers | plain, large, spring lock | ISO 7089, ISO 7093, DIN 127 |
 | Extrusions | T-slot profiles of the 20, 30 and 40 series (2020, 2040, 4080…), V-slot lips | the series' slot |
-| Inserts | heat-set threaded inserts, M2 to M6, standard and short, with the hole to drive them into | common brass inserts |
+| Inserts | heat-set threaded inserts, M2 to M6, standard and short, with the hole to drive them into | the common brass ones (CNC Kitchen, Ruthex) |
 | Bearings | deep groove ball bearings (608, 625, 6000…), linear bushings (LM8UU…) | their designations |
 | Magnets | discs, rings, blocks | common sizes, or any |
 | Rods | smooth shafts, threaded rods, lead screws, dowel pins | stock diameters |
@@ -64,7 +64,9 @@ cargo test --target x86_64-unknown-linux-gnu     # the package's own logic
 
 The kernel check is a crate of its own that compiles the parts' modules
 in beside the native kernel, since the package itself only links as a
-component; it prints each part's volume and build time.
+component; it prints each part's volume and build time. Its `picture`
+binary (`cargo run --release --bin picture`) draws a few parts as the
+kernel builds them to `/tmp/hardware-<part>.svg`, to look at.
 
 The SDK comes from the printCAD repository (`sdk/printcad-bench-sdk` on
 master). To build against a local printCAD, point the dependency in
