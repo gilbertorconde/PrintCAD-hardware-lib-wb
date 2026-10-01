@@ -69,10 +69,9 @@ The kernel check is a crate of its own that compiles the parts' modules
 in beside the native kernel, since the package itself only links as a
 component; it prints each part's volume and build time.
 
-The SDK is read from a printCAD checkout beside this one
-(`../printCAD/sdk/printcad-bench-sdk`) until the diagram widget is on
-printCAD's published master; `Cargo.toml` carries the git dependency to
-switch back to.
+The SDK comes from the printCAD repository (`sdk/printcad-bench-sdk` on
+master). To build against a local printCAD, point the dependency in
+`Cargo.toml` at the checkout's path instead.
 
 ## Release it
 

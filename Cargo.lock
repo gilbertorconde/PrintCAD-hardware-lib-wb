@@ -11,6 +11,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "bench_api"
 version = "0.1.0"
+source = "git+https://github.com/gilbertorconde/printCAD?branch=master#1abd1992c171b0a4431ff4a51b05135534f410dc"
 dependencies = [
  "kernel_api",
  "serde",
@@ -85,6 +86,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "kernel_api"
 version = "0.1.0"
+source = "git+https://github.com/gilbertorconde/printCAD?branch=master#1abd1992c171b0a4431ff4a51b05135534f410dc"
 dependencies = [
  "anyhow",
  "serde",
@@ -133,6 +135,7 @@ dependencies = [
 [[package]]
 name = "printcad-bench-sdk"
 version = "0.1.0"
+source = "git+https://github.com/gilbertorconde/printCAD?branch=master#1abd1992c171b0a4431ff4a51b05135534f410dc"
 dependencies = [
  "bench_api",
  "serde",
