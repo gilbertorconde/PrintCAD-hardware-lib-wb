@@ -10,11 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-# The SDK comes from the printCAD repository. The diagram widget this
-# workbench draws its panels with is newer than the published master, so
-# until that lands there the SDK is read from the checkout beside this one:
-#   printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
-printcad-bench-sdk = { path = "../printCAD/sdk/printcad-bench-sdk" }
+printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]
