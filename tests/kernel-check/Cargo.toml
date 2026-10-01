@@ -1,0 +1,21 @@
+# Builds every part through the real kernel, which the package's own tests
+# cannot: the kernel is native and the package is WebAssembly. The parts'
+# modules are compiled in by path (the package links only as a component).
+# Run it from this folder with `cargo run --release`; it needs the printCAD
+# checkout beside the repository. CI does not run it.
+[package]
+name = "kernel-check"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+printcad-bench-sdk = { path = "../../../printCAD/sdk/printcad-bench-sdk" }
+kernel_api = { path = "../../../printCAD/crates/kernel_api" }
+kernel_ogeom = { path = "../../../printCAD/crates/kernel_ogeom" }
+serde = { version = "1", features = ["derive"] }
+
+[profile.dev.package."*"]
+opt-level = 3

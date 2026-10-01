@@ -1,0 +1,24 @@
+[package]
+name = "hardware"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "A printCAD workbench package: standard hardware sized from its standards"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The SDK comes from the printCAD repository. The diagram widget this
+# workbench draws its panels with is newer than the published master, so
+# until that lands there the SDK is read from the checkout beside this one:
+#   printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
+printcad-bench-sdk = { path = "../printCAD/sdk/printcad-bench-sdk" }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
