@@ -77,6 +77,26 @@ fn main() {
             "tnut-twist-40",
             Hardware::TNut(TNut::new(TNutKind::Twist, 40, "M6", &d)),
         ),
+        ("standoff-mf", {
+            let mut s = parts::standoff::Standoff::new(parts::standoff::StandoffShape::Hex, "M3", &d);
+            s.stud = 6.0;
+            Hardware::Standoff(s)
+        }),
+        ("nut-wing", Hardware::Nut(Nut::new(NutKind::Wing, "M6", &d))),
+        ("nut-thumb", Hardware::Nut(Nut::new(NutKind::Thumb, "M4", &d))),
+        ("screw-thumb", Hardware::Screw(Screw::new(Head::Thumb, "M4", &d))),
+        ("gear-spur", {
+            let mut g = parts::gear::Gear::new(parts::gear::GearKind::Spur);
+            g.hub = 12.0;
+            g.set_screw = 3.0;
+            Hardware::Gear(g)
+        }),
+        ("gear-herringbone", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Herringbone))),
+        ("gear-bevel", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Bevel))),
+        ("gear-worm", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Worm))),
+        ("gear-pulley", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Pulley))),
+        ("gear-rack", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Rack))),
+        ("gear-internal", Hardware::Gear(parts::gear::Gear::new(parts::gear::GearKind::Internal))),
     ];
     let mut kernel = kernel_ogeom::OgeomKernel::new();
     let detail = TessellationSettings::default();

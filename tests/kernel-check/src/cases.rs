@@ -215,5 +215,42 @@ pub fn cases() -> Vec<Case> {
         Hardware::Screw(long),
     );
     case("spring Ø10 × 25", Hardware::Spring(Spring::default()));
+    use crate::parts::standoff::{Bore, Standoff, StandoffShape};
+    case(
+        "standoff hex M3 × 10",
+        Hardware::Standoff(Standoff::new(StandoffShape::Hex, "M3", &d)),
+    );
+    let mut mf = Standoff::new(StandoffShape::Hex, "M3", &d);
+    mf.stud = 6.0;
+    mf.thread = true;
+    case("standoff hex M3 × 10 male-female, modelled thread", Hardware::Standoff(mf));
+    let mut ins = Standoff::new(StandoffShape::Round, "M4", &d);
+    ins.bore = Bore::Insert;
+    ins.length = 25.0;
+    case("standoff round M4 × 25, insert holes", Hardware::Standoff(ins));
+    let mut spacer = Standoff::new(StandoffShape::Round, "M5", &d);
+    spacer.bore = Bore::Clear;
+    case("spacer round M5 × 15", Hardware::Standoff(spacer));
+    use crate::parts::gear::{Gear, GearKind, Shaft};
+    for kind in GearKind::ALL {
+        case(&format!("gear {}", kind.tool()), Hardware::Gear(Gear::new(kind)));
+    }
+    let mut hubbed = Gear::new(GearKind::Spur);
+    hubbed.hub = 14.0;
+    hubbed.set_screw = 3.0;
+    hubbed.shaft = Shaft::Keyed;
+    case("gear spur, keyed, hub and set screw", Hardware::Gear(hubbed));
+    let mut hexed = Gear::new(GearKind::Helical);
+    hexed.shaft = Shaft::Hex;
+    hexed.bore = 6.0;
+    hexed.left = true;
+    hexed.helix = 30.0;
+    case("gear helical 30° left, hex bore", Hardware::Gear(hexed));
+    let mut worm = Gear::new(GearKind::Worm);
+    worm.starts = 2;
+    case("gear worm 2-start", Hardware::Gear(worm));
+    let mut big = Gear::new(GearKind::Internal);
+    big.teeth = 40;
+    case("gear internal 40T", Hardware::Gear(big));
     out
 }

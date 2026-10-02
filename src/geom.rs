@@ -226,12 +226,44 @@ pub fn thread_groove(
     lead_in: bool,
     left_handed: bool,
 ) -> SolidOp {
-    // The section, in a plane through the axis: x out from it, y down it.
+    thread_groove_at(
+        open,
+        bottom,
+        flat,
+        flank_deg,
+        pitch,
+        z_top,
+        length,
+        lead_in,
+        left_handed,
+        0.0,
+    )
+}
+
+/// `thread_groove`, its start turned `phase_deg` round the axis from
+/// +X: a multi-start thread is one groove per start, a turn's share
+/// apart.
+#[allow(clippy::too_many_arguments)]
+pub fn thread_groove_at(
+    open: f64,
+    bottom: f64,
+    flat: f64,
+    flank_deg: f64,
+    pitch: f64,
+    z_top: f64,
+    length: f64,
+    lead_in: bool,
+    left_handed: bool,
+    phase_deg: f64,
+) -> SolidOp {
+    // The section, in a plane through the axis: x out from it, y down it,
+    // the plane turned round the axis to where the groove starts.
+    let (sin, cos) = phase_deg.to_radians().sin_cos();
     let plane = ProfilePlane {
         origin: [0.0, 0.0, z_top],
-        x_axis: [1.0, 0.0, 0.0],
+        x_axis: [cos, sin, 0.0],
         y_axis: [0.0, 0.0, -1.0],
-        normal: [0.0, 1.0, 0.0],
+        normal: [-sin, cos, 0.0],
     };
     let outward = open > bottom;
     // Well past the opening, so the groove leaves no skin.

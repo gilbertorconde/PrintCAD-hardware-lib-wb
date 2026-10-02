@@ -4,12 +4,14 @@
 
 pub mod bearing;
 pub mod extrusion;
+pub mod gear;
 pub mod insert;
 pub mod magnet;
 pub mod nut;
 pub mod rod;
 pub mod screw;
 pub mod spring;
+pub mod standoff;
 pub mod tnut;
 pub mod washer;
 
@@ -20,12 +22,14 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub use bearing::Bearing;
 pub use extrusion::Extrusion;
+pub use gear::Gear;
 pub use insert::Insert;
 pub use magnet::Magnet;
 pub use nut::Nut;
 pub use rod::Rod;
 pub use screw::Screw;
 pub use spring::Spring;
+pub use standoff::Standoff;
 pub use tnut::TNut;
 pub use washer::Washer;
 
@@ -98,10 +102,12 @@ pub enum Family {
     Magnet,
     Rod,
     Spring,
+    Standoff,
+    Gear,
 }
 
 impl Family {
-    pub const ALL: [Family; 10] = [
+    pub const ALL: [Family; 12] = [
         Family::Screw,
         Family::Nut,
         Family::TNut,
@@ -112,6 +118,8 @@ impl Family {
         Family::Magnet,
         Family::Rod,
         Family::Spring,
+        Family::Standoff,
+        Family::Gear,
     ];
 
     pub fn name(self) -> &'static str {
@@ -126,6 +134,8 @@ impl Family {
             Family::Magnet => "magnet",
             Family::Rod => "rod",
             Family::Spring => "spring",
+            Family::Standoff => "standoff",
+            Family::Gear => "gear",
         }
     }
 
@@ -141,6 +151,8 @@ impl Family {
             Family::Magnet => "Magnet",
             Family::Rod => "Rod",
             Family::Spring => "Spring",
+            Family::Standoff => "Standoff",
+            Family::Gear => "Gear",
         }
     }
 
@@ -173,6 +185,8 @@ pub enum Hardware {
     Magnet(Magnet),
     Rod(Rod),
     Spring(Spring),
+    Standoff(Standoff),
+    Gear(Gear),
 }
 
 macro_rules! each {
@@ -188,6 +202,8 @@ macro_rules! each {
             Hardware::Magnet($p) => $body,
             Hardware::Rod($p) => $body,
             Hardware::Spring($p) => $body,
+            Hardware::Standoff($p) => $body,
+            Hardware::Gear($p) => $body,
         }
     };
 }
@@ -210,6 +226,8 @@ impl Hardware {
             Family::Magnet => Hardware::Magnet(read(data)?),
             Family::Rod => Hardware::Rod(read(data)?),
             Family::Spring => Hardware::Spring(read(data)?),
+            Family::Standoff => Hardware::Standoff(read(data)?),
+            Family::Gear => Hardware::Gear(read(data)?),
         })
     }
 
@@ -230,6 +248,8 @@ impl Hardware {
             Family::Magnet => Hardware::Magnet(Magnet::with_args(args, defaults)?),
             Family::Rod => Hardware::Rod(Rod::with_args(args, defaults)?),
             Family::Spring => Hardware::Spring(Spring::with_args(args, defaults)?),
+            Family::Standoff => Hardware::Standoff(Standoff::with_args(args, defaults)?),
+            Family::Gear => Hardware::Gear(Gear::with_args(args, defaults)?),
         })
     }
 
@@ -411,6 +431,43 @@ pub fn fmt(v: f64) -> String {
     crate::geom::trim(v)
 }
 
+/// The holes made for a thread, for a panel: its clearance holes, its
+/// tap drill and the hole for its heat-set insert.
+pub fn holes_text(d: f64, pitch: f64) -> String {
+    let mut parts = Vec::new();
+    if let Some(h) = crate::standards::clearance(d) {
+        parts.push(format!(
+            "clearance Ø{} (fine Ø{}, coarse Ø{})",
+            fmt(h.medium),
+            fmt(h.fine),
+            fmt(h.coarse)
+        ));
+    } else {
+        parts.push(format!(
+            "clearance about Ø{}",
+            fmt(((d * 1.1) * 10.0).round() / 10.0)
+        ));
+    }
+    if pitch > 0.0 && pitch < d {
+        parts.push(format!(
+            "tap drill Ø{}",
+            fmt(((d - pitch) * 100.0).round() / 100.0)
+        ));
+    }
+    if let Some(i) = crate::standards::insert_for(d) {
+        parts.push(format!(
+            "heat-set insert Ø{} × {} deep",
+            fmt(i.hole),
+            fmt(i.length + 1.0)
+        ));
+    }
+    let mut text = parts.join(" · ");
+    if let Some(first) = text.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    text
+}
+
 /// An axis up Z from `z0` to `z1`.
 pub fn z_axis(z0: f64, z1: f64) -> ([f64; 3], [f64; 3]) {
     ([0.0, 0.0, z0], [0.0, 0.0, z1])
@@ -444,6 +501,15 @@ mod tests {
             assert_eq!(Family::named(family.name()), Some(family));
         }
         assert_eq!(Family::from_kind("other.kind"), None);
+    }
+
+    #[test]
+    fn the_holes_for_a_thread_are_named() {
+        assert_eq!(
+            holes_text(3.0, 0.5),
+            "Clearance Ø3.4 (fine Ø3.2, coarse Ø3.6) · tap drill Ø2.5 · heat-set insert Ø4 × 6.7 deep"
+        );
+        assert_eq!(holes_text(7.0, 1.0), "Clearance about Ø7.7 · tap drill Ø6");
     }
 
     #[test]

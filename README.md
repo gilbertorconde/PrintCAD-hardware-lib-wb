@@ -13,8 +13,8 @@ number takes a formula, as printCAD's own fields do.
 
 | Family | Parts | Sized by |
 | --- | --- | --- |
-| Screws | socket head cap, button head, countersunk, hex bolt, low head cap, set screw | ISO 4762 / DIN 912, ASME B18.3 (inch), ISO 7380-1, ISO 10642, ISO 4017, DIN 7984, ISO 4026 |
-| Nuts | hex, thin, nylon insert lock, square | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557 |
+| Screws | socket head cap, button head, countersunk, hex bolt, low head cap, set screw, knurled thumb screw | ISO 4762 / DIN 912, ASME B18.3 (inch), ISO 7380-1, ISO 10642, ISO 4017, DIN 7984, ISO 4026, DIN 464 |
+| Nuts | hex, thin, nylon insert lock, square, wing, knurled thumb | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557, DIN 315, DIN 466 |
 | T-slot nuts | sliding (with a neck in the slot), drop-in, spring-ball drop-in, twist (a quarter turn on two rounded corners locks it), roll-in with set screw, for the 20, 30 and 40 series | the makers' drawings and models: Framing Technology TSN, TN and DTNB for the 6, 8 and 10 mm slots, Misumi HNTA, HNTP, HNTR for the 20 and 40 series drop-ins |
 | Washers | plain, large, spring lock | ISO 7089, ISO 7093, DIN 127 |
 | Extrusions | T-slot profiles of the 20, 30 and 40 series (slots 6, 8 and 10): any cells (2020, 2040, 4080…), hollow between cells, all faces slotted or the one-, two- and three-slot variants; the OpenBuilds 20 series V-slot | the extrusion maker's drawings (Misumi HFS5, HFS6, HFS8); the V-slot as the BOLTS library traces it |
@@ -23,6 +23,14 @@ number takes a formula, as printCAD's own fields do.
 | Magnets | discs, rings, blocks | common sizes, or any |
 | Rods | smooth shafts, threaded rods, lead screws, dowel pins | stock diameters |
 | Springs | compression springs | wire, diameter, length and turns |
+| Standoffs | hex or round standoffs and spacers, female at both ends or with a stud, bored for a thread, a clearance hole or heat-set inserts | the brass ones' sizes (M2 to M6), ISO 273 for the clearance, the insert table for the holes |
+| Gears | involute spur, helical and herringbone gears, internal ring gears, racks, worms (multi-start), straight bevel gears, GT2 timing pulleys; round, D, double-D, hex and keyed bores with motor and bearing presets; a hub with a set screw | module, teeth, pressure angle, helix angle and backlash; each tells its pitch and outside diameters and the centre distance to its mate |
+
+A size a table lacks (`M7`, or a bare diameter in a command) is made in
+proportion to its thread, as the standards run. Every screw's panel
+names the holes made for it: the ISO 273 clearance holes in the three
+series, the tap drill and the heat-set insert's hole; the `catalog`
+command lists them too.
 
 The screw, nut, washer and bearing tables were checked against the
 [BOLTS](https://github.com/boltsparts/BOLTS_archive) library's, an open

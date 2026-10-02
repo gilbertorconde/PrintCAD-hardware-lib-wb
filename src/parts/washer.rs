@@ -112,6 +112,18 @@ impl Washer {
         self.kind.table().rows.iter().map(|r| r.size).collect()
     }
 
+    /// Size the washer `size`, a diameter off the tables, in proportion
+    /// to its thread, as the standards run.
+    fn proportion(&mut self, size: &str, d: f64) {
+        let r = |v: f64| (v * 10.0).round() / 10.0;
+        self.size = size.trim().to_uppercase();
+        (self.d1, self.d2, self.h) = match self.kind {
+            WasherKind::Flat => (r(1.07 * d), r(2.0 * d), r((0.18 * d).max(0.5))),
+            WasherKind::Large => (r(1.07 * d), r(3.0 * d), r((0.2 * d).max(0.5))),
+            WasherKind::Spring => (r(1.03 * d), r(1.8 * d), r((0.25 * d).max(0.5))),
+        };
+    }
+
     pub fn refill(&mut self) {
         let table = self.kind.table();
         self.standard = table.name.into();
@@ -292,7 +304,22 @@ impl Part for Washer {
         let size = arg_str(args, "size").unwrap_or(&defaults.size);
         let mut washer = Washer::new(kind, size);
         if !washer.size.eq_ignore_ascii_case(size) && arg_str(args, "size").is_some() {
-            return Err(format!("{} has no size `{size}`", washer.standard));
+            // A size the table lacks is made in proportion to its thread.
+            let (d, _) = standards::metric_any(size)
+                .ok_or_else(|| format!("{} has no size `{size}`", washer.standard))?;
+            washer.proportion(size, d);
+        }
+        if arg_str(args, "size").is_none()
+            && let Some(d) = arg_f64(args, "d")
+            && d > 0.0
+        {
+            let name = standards::size_name(d);
+            if washer.sizes().iter().any(|s| s.eq_ignore_ascii_case(&name)) {
+                washer.size = name;
+                washer.refill();
+            } else {
+                washer.proportion(&name, d);
+            }
         }
         for (key, slot) in [
             ("d1", &mut washer.d1),
@@ -375,5 +402,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!((washer.kind, washer.d2), (WasherKind::Spring, 14.8));
+        let odd = Washer::with_args(&json!({"size": "M7"}), &Defaults::default()).unwrap();
+        assert_eq!(
+            (odd.size.as_str(), odd.d1, odd.d2, odd.h),
+            ("M7", 7.5, 14.0, 1.3)
+        );
+        assert_eq!(odd.problem(), None);
+        let by_d =
+            Washer::with_args(&json!({"kind": "large", "d": 14.0}), &Defaults::default()).unwrap();
+        assert_eq!((by_d.size.as_str(), by_d.d2), ("M14", 42.0));
     }
 }

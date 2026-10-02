@@ -31,6 +31,118 @@ pub fn metric(size: &str) -> Option<(f64, f64)> {
         .map(|(_, d, p)| (*d, *p))
 }
 
+/// The diameter and coarse pitch of any metric size, `M7` → `(7.0, 1.0)`:
+/// the table's, or the ISO 261 coarse pitch of the diameter parsed from
+/// the name, the nearest listed diameter's when the size is not listed.
+pub fn metric_any(size: &str) -> Option<(f64, f64)> {
+    if let Some(found) = metric(size) {
+        return Some(found);
+    }
+    let d: f64 = size
+        .trim()
+        .trim_start_matches(['M', 'm'])
+        .trim()
+        .parse()
+        .ok()?;
+    if d <= 0.0 {
+        return None;
+    }
+    Some((d, coarse_pitch(d)))
+}
+
+/// ISO 261 coarse pitches of the sizes between the tables' rows.
+const COARSE_PITCHES: [(f64, f64); 25] = [
+    (1.0, 0.25),
+    (1.2, 0.25),
+    (1.4, 0.3),
+    (1.6, 0.35),
+    (2.0, 0.4),
+    (2.5, 0.45),
+    (3.0, 0.5),
+    (3.5, 0.6),
+    (4.0, 0.7),
+    (5.0, 0.8),
+    (6.0, 1.0),
+    (7.0, 1.0),
+    (8.0, 1.25),
+    (10.0, 1.5),
+    (12.0, 1.75),
+    (14.0, 2.0),
+    (16.0, 2.0),
+    (18.0, 2.5),
+    (20.0, 2.5),
+    (22.0, 2.5),
+    (24.0, 3.0),
+    (27.0, 3.0),
+    (30.0, 3.5),
+    (36.0, 4.0),
+    (42.0, 4.5),
+];
+
+/// The coarse pitch of a diameter: the nearest listed one's.
+pub fn coarse_pitch(d: f64) -> f64 {
+    COARSE_PITCHES
+        .iter()
+        .min_by(|a, b| (a.0 - d).abs().total_cmp(&(b.0 - d).abs()))
+        .map_or(0.0, |p| p.1)
+}
+
+/// The name of a size made up from a diameter, `M7`.
+pub fn size_name(d: f64) -> String {
+    format!("M{}", crate::geom::trim(d))
+}
+
+/// The holes made for a thread: the clearance holes of ISO 273 in its
+/// three series, and the tap drill (the diameter less the pitch).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HoleRow {
+    pub size: &'static str,
+    pub d: f64,
+    pub fine: f64,
+    pub medium: f64,
+    pub coarse: f64,
+}
+
+const fn hole(size: &'static str, d: f64, fine: f64, medium: f64, coarse: f64) -> HoleRow {
+    HoleRow {
+        size,
+        d,
+        fine,
+        medium,
+        coarse,
+    }
+}
+
+/// ISO 273 clearance holes.
+pub const CLEARANCE_HOLES: [HoleRow; 15] = [
+    hole("M1.6", 1.6, 1.7, 1.8, 2.0),
+    hole("M2", 2.0, 2.2, 2.4, 2.6),
+    hole("M2.5", 2.5, 2.7, 2.9, 3.1),
+    hole("M3", 3.0, 3.2, 3.4, 3.6),
+    hole("M3.5", 3.5, 3.7, 3.9, 4.2),
+    hole("M4", 4.0, 4.3, 4.5, 4.8),
+    hole("M5", 5.0, 5.3, 5.5, 5.8),
+    hole("M6", 6.0, 6.4, 6.6, 7.0),
+    hole("M8", 8.0, 8.4, 9.0, 10.0),
+    hole("M10", 10.0, 10.5, 11.0, 12.0),
+    hole("M12", 12.0, 13.0, 13.5, 14.5),
+    hole("M14", 14.0, 15.0, 15.5, 16.5),
+    hole("M16", 16.0, 17.0, 17.5, 18.5),
+    hole("M20", 20.0, 21.0, 22.0, 24.0),
+    hole("M24", 24.0, 25.0, 26.0, 28.0),
+];
+
+/// The clearance holes for a thread of diameter `d`, when the standard
+/// lists it.
+pub fn clearance(d: f64) -> Option<&'static HoleRow> {
+    CLEARANCE_HOLES.iter().find(|r| (r.d - d).abs() < 0.05)
+}
+
+/// The insert made for a thread of diameter `d`.
+pub fn insert_for(d: f64) -> Option<&'static InsertRow> {
+    INSERTS.iter().find(|r| (r.d - d).abs() < 0.05)
+}
+
 /// The metric sizes the thread tables offer, `M2` to `M12`.
 pub const METRIC_SIZES: [&str; 9] = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12"];
 
@@ -223,6 +335,24 @@ pub const ISO_4017: ScrewTable = ScrewTable {
     ],
 };
 
+/// Knurled thumb screws, high type: `dk` the knurled disc across, `k`
+/// the head's height over all, `s` the shoulder under the disc across
+/// and `t` the disc's height.
+pub const DIN_464: ScrewTable = ScrewTable {
+    name: "DIN 464",
+    inch: false,
+    rows: &[
+        row("M2", 2.0, 0.4, 9.0, 5.3, 4.5, 2.0),
+        row("M2.5", 2.5, 0.45, 11.0, 6.5, 5.0, 2.5),
+        row("M3", 3.0, 0.5, 12.0, 7.5, 6.0, 2.5),
+        row("M4", 4.0, 0.7, 16.0, 9.5, 8.0, 3.5),
+        row("M5", 5.0, 0.8, 20.0, 11.5, 10.0, 4.0),
+        row("M6", 6.0, 1.0, 24.0, 15.0, 12.0, 5.0),
+        row("M8", 8.0, 1.25, 30.0, 18.0, 16.0, 6.0),
+        row("M10", 10.0, 1.5, 36.0, 23.0, 20.0, 8.0),
+    ],
+};
+
 /// Low head socket cap screws.
 pub const DIN_7984: ScrewTable = ScrewTable {
     name: "DIN 7984",
@@ -262,10 +392,18 @@ pub struct NutRow {
     pub size: &'static str,
     pub d: f64,
     pub pitch: f64,
-    /// Width across flats (a square nut's side).
+    /// Width across flats (a square nut's side); a wing nut's body or a
+    /// thumb nut's shoulder across.
     pub s: f64,
     /// Height over all.
     pub m: f64,
+    /// A wing nut's span over the wings; a thumb nut's knurled disc
+    /// across. 0 for neither.
+    pub e: f64,
+    /// A wing's thickness.
+    pub g: f64,
+    /// A wing nut's body height under the wings; a thumb nut's disc height.
+    pub k: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -281,6 +419,32 @@ const fn nut(size: &'static str, d: f64, pitch: f64, s: f64, m: f64) -> NutRow {
         pitch,
         s,
         m,
+        e: 0.0,
+        g: 0.0,
+        k: 0.0,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn winged(
+    size: &'static str,
+    d: f64,
+    pitch: f64,
+    s: f64,
+    m: f64,
+    e: f64,
+    g: f64,
+    k: f64,
+) -> NutRow {
+    NutRow {
+        size,
+        d,
+        pitch,
+        s,
+        m,
+        e,
+        g,
+        k,
     }
 }
 
@@ -358,6 +522,38 @@ pub const DIN_557: NutTable = NutTable {
         nut("M8", 8.0, 1.25, 13.0, 6.5),
         nut("M10", 10.0, 1.5, 17.0, 8.0),
         nut("M12", 12.0, 1.75, 19.0, 10.0),
+    ],
+};
+
+/// Wing nuts with rounded wings: the body `s` across and `k` high, the
+/// wings `e` over all, `g` thick, `m` high. The standard gives ranges;
+/// these are their middles.
+pub const DIN_315: NutTable = NutTable {
+    name: "DIN 315 D",
+    rows: &[
+        winged("M4", 4.0, 0.7, 7.0, 9.5, 19.0, 1.8, 3.9),
+        winged("M5", 5.0, 0.8, 9.5, 12.0, 25.0, 2.2, 5.2),
+        winged("M6", 6.0, 1.0, 11.5, 16.0, 31.5, 2.5, 6.5),
+        winged("M8", 8.0, 1.25, 14.5, 19.0, 37.5, 3.2, 8.2),
+        winged("M10", 10.0, 1.5, 18.5, 24.0, 49.5, 4.5, 10.0),
+        winged("M12", 12.0, 1.75, 21.5, 32.0, 63.5, 5.2, 12.0),
+        winged("M16", 16.0, 2.0, 27.5, 36.0, 71.5, 6.5, 15.0),
+    ],
+};
+
+/// Knurled thumb nuts, high type: the shoulder `s` across under a
+/// knurled disc `e` across and `k` high, `m` high over all.
+pub const DIN_466: NutTable = NutTable {
+    name: "DIN 466",
+    rows: &[
+        winged("M2", 2.0, 0.4, 4.5, 5.3, 9.0, 0.0, 2.0),
+        winged("M2.5", 2.5, 0.45, 5.0, 6.5, 11.0, 0.0, 2.5),
+        winged("M3", 3.0, 0.5, 6.0, 7.5, 12.0, 0.0, 2.5),
+        winged("M4", 4.0, 0.7, 8.0, 9.5, 16.0, 0.0, 3.5),
+        winged("M5", 5.0, 0.8, 10.0, 11.5, 20.0, 0.0, 4.0),
+        winged("M6", 6.0, 1.0, 12.0, 15.0, 24.0, 0.0, 5.0),
+        winged("M8", 8.0, 1.25, 16.0, 18.0, 30.0, 0.0, 6.0),
+        winged("M10", 10.0, 1.5, 20.0, 23.0, 36.0, 0.0, 8.0),
     ],
 };
 
@@ -836,6 +1032,37 @@ pub fn series_floor(s: &ExtrusionSeries) -> f64 {
     }
 }
 
+/// A threaded standoff or spacer as the brass ones are made: hex across
+/// flats (a round one is as wide), with the stud a male-female one
+/// carries.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StandoffRow {
+    pub size: &'static str,
+    pub d: f64,
+    pub pitch: f64,
+    pub across: f64,
+    pub stud: f64,
+}
+
+const fn standoff(size: &'static str, d: f64, pitch: f64, across: f64, stud: f64) -> StandoffRow {
+    StandoffRow {
+        size,
+        d,
+        pitch,
+        across,
+        stud,
+    }
+}
+
+pub const STANDOFFS: [StandoffRow; 6] = [
+    standoff("M2", 2.0, 0.4, 4.0, 4.0),
+    standoff("M2.5", 2.5, 0.45, 5.0, 5.0),
+    standoff("M3", 3.0, 0.5, 5.5, 6.0),
+    standoff("M4", 4.0, 0.7, 7.0, 8.0),
+    standoff("M5", 5.0, 0.8, 8.0, 10.0),
+    standoff("M6", 6.0, 1.0, 10.0, 12.0),
+];
+
 /// A heat-set threaded insert for printed parts, as CNC Kitchen's brass
 /// ones are made and their dimension table gives them: a pilot end that
 /// finds the hole, two knurled bands, the upper the wider, and the hole
@@ -1040,6 +1267,33 @@ mod tests {
                 assert!(row.s > row.d && row.m > 0.0, "{} {}", table.name, row.size);
             }
         }
+        for table in [DIN_315, DIN_466] {
+            for row in table.rows {
+                assert!(
+                    row.s > row.d && row.e > row.s && row.k < row.m,
+                    "{} {}",
+                    table.name,
+                    row.size
+                );
+            }
+        }
+        for row in DIN_464.rows {
+            assert!(
+                row.s > row.d && row.dk > row.s && row.t < row.k,
+                "DIN 464 {}",
+                row.size
+            );
+        }
+        for row in CLEARANCE_HOLES {
+            assert!(row.d < row.fine && row.fine < row.medium && row.medium < row.coarse);
+        }
+        assert_eq!(metric_any("M7"), Some((7.0, 1.0)));
+        assert_eq!(metric_any("m3.5"), Some((3.5, 0.6)));
+        assert_eq!(metric_any("M3"), Some((3.0, 0.5)));
+        assert_eq!(metric_any("x"), None);
+        assert_eq!(size_name(7.0), "M7");
+        assert_eq!(clearance(3.0).map(|h| h.medium), Some(3.4));
+        assert_eq!(insert_for(4.0).map(|r| r.hole), Some(5.6));
         for table in [ISO_7089, ISO_7093, DIN_127] {
             for row in table.rows {
                 assert!(

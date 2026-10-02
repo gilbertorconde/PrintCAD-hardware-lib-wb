@@ -11,6 +11,10 @@ use super::{
     note, number, toggle,
 };
 use crate::diagram::Sketch;
+use std::f64::consts::PI;
+
+use printcad_bench_sdk::api::kernel_api::ProfilePlane;
+
 use crate::geom::{self, across_corners, revolve};
 use crate::standards::{self, NutTable, internal_minor};
 
@@ -21,10 +25,21 @@ pub enum NutKind {
     Thin,
     Nyloc,
     Square,
+    /// Two wings on a round body, turned by hand.
+    Wing,
+    /// A knurled disc on a shoulder, turned by hand.
+    Thumb,
 }
 
 impl NutKind {
-    pub const ALL: [NutKind; 4] = [NutKind::Hex, NutKind::Thin, NutKind::Nyloc, NutKind::Square];
+    pub const ALL: [NutKind; 6] = [
+        NutKind::Hex,
+        NutKind::Thin,
+        NutKind::Nyloc,
+        NutKind::Square,
+        NutKind::Wing,
+        NutKind::Thumb,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -32,6 +47,8 @@ impl NutKind {
             NutKind::Thin => "Thin hex",
             NutKind::Nyloc => "Nylon insert lock",
             NutKind::Square => "Square",
+            NutKind::Wing => "Wing",
+            NutKind::Thumb => "Knurled thumb",
         }
     }
 
@@ -41,6 +58,8 @@ impl NutKind {
             NutKind::Thin => "thin nut",
             NutKind::Nyloc => "lock nut",
             NutKind::Square => "square nut",
+            NutKind::Wing => "wing nut",
+            NutKind::Thumb => "thumb nut",
         }
     }
 
@@ -50,6 +69,8 @@ impl NutKind {
             NutKind::Thin => "nut-thin",
             NutKind::Nyloc => "nut-nyloc",
             NutKind::Square => "nut-square",
+            NutKind::Wing => "nut-wing",
+            NutKind::Thumb => "nut-thumb",
         }
     }
 
@@ -59,6 +80,8 @@ impl NutKind {
             NutKind::Thin => "thin_nut",
             NutKind::Nyloc => "nyloc_nut",
             NutKind::Square => "square_nut",
+            NutKind::Wing => "wing_nut",
+            NutKind::Thumb => "thumb_nut",
         }
     }
 
@@ -78,6 +101,21 @@ impl NutKind {
             NutKind::Thin => &[standards::ISO_4035],
             NutKind::Nyloc => &[standards::DIN_985],
             NutKind::Square => &[standards::DIN_562, standards::DIN_557],
+            NutKind::Wing => &[standards::DIN_315],
+            NutKind::Thumb => &[standards::DIN_466],
+        }
+    }
+
+    /// The row a size off the tables gets, in proportion to its thread.
+    fn proportions(self, d: f64) -> (f64, f64, f64, f64, f64) {
+        let r = |v: f64| (v * 10.0).round() / 10.0;
+        match self {
+            NutKind::Hex => (r(1.6 * d + 0.5), r(0.85 * d), 0.0, 0.0, 0.0),
+            NutKind::Thin => (r(1.6 * d + 0.5), r(0.5 * d), 0.0, 0.0, 0.0),
+            NutKind::Nyloc => (r(1.6 * d + 0.5), r(1.1 * d), 0.0, 0.0, 0.0),
+            NutKind::Square => (r(1.6 * d + 0.5), r(0.8 * d), 0.0, 0.0, 0.0),
+            NutKind::Wing => (r(1.8 * d), r(2.5 * d), r(5.0 * d), r(0.45 * d), r(d)),
+            NutKind::Thumb => (r(2.0 * d), r(2.4 * d), r(4.0 * d), 0.0, r(0.8 * d)),
         }
     }
 }
@@ -99,6 +137,14 @@ pub struct Nut {
     pub collar_d: f64,
     #[serde(default)]
     pub collar_h: f64,
+    /// A wing nut's span and wing thickness, or a thumb nut's knurled disc
+    /// across; and the body's height under the wings, or the disc's.
+    #[serde(default)]
+    pub e: f64,
+    #[serde(default)]
+    pub g: f64,
+    #[serde(default)]
+    pub k: f64,
     #[serde(default)]
     pub custom: bool,
     #[serde(default)]
@@ -117,11 +163,32 @@ impl Nut {
             m: 0.0,
             collar_d: 0.0,
             collar_h: 0.0,
+            e: 0.0,
+            g: 0.0,
+            k: 0.0,
             custom: false,
             thread: defaults.thread,
         };
         nut.refill();
         nut
+    }
+
+    /// Size the nut `size`, a diameter off the tables, in proportion to
+    /// its thread.
+    fn proportion(&mut self, size: &str, d: f64, pitch: f64) {
+        self.size = size.trim().to_uppercase();
+        self.d = d;
+        self.pitch = pitch;
+        (self.s, self.m, self.e, self.g, self.k) = self.kind.proportions(d);
+        if self.kind == NutKind::Nyloc {
+            self.collar_h = ((0.4 * self.m) * 10.0).round() / 10.0;
+            self.collar_d = ((0.92 * self.s) * 10.0).round() / 10.0;
+        }
+    }
+
+    /// How many facets a knurled disc shows round.
+    fn knurl_facets(&self) -> u32 {
+        ((std::f64::consts::PI * self.e / 1.2).round() as u32).clamp(24, 60)
     }
 
     fn table(&self) -> Option<&'static NutTable> {
@@ -173,6 +240,9 @@ impl Nut {
         self.pitch = row.pitch;
         self.s = row.s;
         self.m = row.m;
+        self.e = row.e;
+        self.g = row.g;
+        self.k = row.k;
         if self.kind == NutKind::Nyloc {
             // The metal is a regular nut's height; the collar is the rest.
             let metal = standards::ISO_4032
@@ -193,8 +263,25 @@ impl Nut {
     fn body_height(&self) -> f64 {
         match self.kind {
             NutKind::Nyloc => self.m - self.collar_h,
+            NutKind::Wing => self.k,
+            NutKind::Thumb => self.m - self.k,
             _ => self.m,
         }
+    }
+
+    /// A wing's outline in `(x, z)`, from the body out to the span,
+    /// rounded at its tip, for the wing on +X.
+    fn wing(&self) -> Vec<[f64; 2]> {
+        let (x0, xo, h) = (self.s / 2.0 - 0.3, self.e / 2.0, self.m);
+        let z0 = 0.12 * h;
+        let r = (0.3 * (xo - x0)).min(0.3 * h).max(0.01);
+        let mut pts = vec![[x0, z0], [xo - r, z0]];
+        pts.extend(geom::arc_points([xo - r, z0 + r], r, -PI / 2.0, 0.0, 4));
+        pts.push([xo, h - r]);
+        pts.extend(geom::arc_points([xo - r, h - r], r, 0.0, PI / 2.0, 4));
+        pts.push([x0 + 0.3 * (xo - x0), h]);
+        pts.push([x0, 0.8 * h]);
+        pts
     }
 }
 
@@ -218,6 +305,16 @@ impl Part for Nut {
         }
         if self.s <= self.d {
             return Some("The nut must be wider than its thread.".into());
+        }
+        if self.kind == NutKind::Wing
+            && (self.e <= self.s || self.g <= 0.0 || self.k >= self.m || self.k <= 0.0)
+        {
+            return Some("The wings must span past the body, with a thickness, over a body lower than the nut.".into());
+        }
+        if self.kind == NutKind::Thumb && (self.e <= self.s || self.k >= self.m || self.k <= 0.0) {
+            return Some(
+                "The knurl must be wider than the shoulder and lower than the nut.".into(),
+            );
         }
         if self.kind == NutKind::Nyloc
             && (self.collar_h <= 0.0
@@ -270,6 +367,55 @@ impl Part for Nut {
                 h,
                 BooleanOp::NewSolid,
             )],
+            NutKind::Wing => {
+                // A round body, a wing fused on each side of it, each a
+                // plate drawn in the XZ plane and extruded through Y.
+                let mut ops = vec![geom::prism(
+                    &geom::regular(48, self.s),
+                    bore,
+                    0.0,
+                    h,
+                    BooleanOp::NewSolid,
+                )];
+                let wing = self.wing();
+                for sign in [1.0, -1.0] {
+                    let outline: Vec<[f64; 2]> = if sign > 0.0 {
+                        wing.clone()
+                    } else {
+                        wing.iter().rev().map(|p| [-p[0], p[1]]).collect()
+                    };
+                    let plane = ProfilePlane {
+                        origin: [0.0, self.g / 2.0, 0.0],
+                        x_axis: [1.0, 0.0, 0.0],
+                        y_axis: [0.0, 0.0, 1.0],
+                        normal: [0.0, -1.0, 0.0],
+                    };
+                    ops.push(geom::extrude(
+                        plane,
+                        vec![geom::polygon(&outline)],
+                        self.g,
+                        BooleanOp::Fuse,
+                    ));
+                }
+                ops
+            }
+            NutKind::Thumb => {
+                // The shoulder, with the knurled disc fused on its top and
+                // a little down into it.
+                let n = self.knurl_facets();
+                let across = self.e * (PI / f64::from(n)).cos();
+                let overlap = (self.k / 2.0).min(0.5);
+                vec![
+                    geom::prism(
+                        &geom::regular(48, self.s),
+                        bore.clone(),
+                        0.0,
+                        h + overlap,
+                        BooleanOp::NewSolid,
+                    ),
+                    geom::prism(&geom::regular(n, across), bore, h, self.k, BooleanOp::Fuse),
+                ]
+            }
         };
         if self.thread {
             let top = self.m;
@@ -313,10 +459,21 @@ impl Part for Nut {
             dims.push(number(ctx, "pitch", "Pitch", self.pitch, 0.05, 2));
             let width = match self.kind {
                 NutKind::Square => "Side",
+                NutKind::Wing => "Body diameter",
+                NutKind::Thumb => "Shoulder diameter",
                 _ => "Across flats",
             };
             dims.push(number(ctx, "s", width, self.s, 0.1, 2));
             dims.push(number(ctx, "m", "Height", self.m, 0.1, 2));
+            if self.kind == NutKind::Wing {
+                dims.push(number(ctx, "e", "Wing span", self.e, 0.1, 2));
+                dims.push(number(ctx, "g", "Wing thickness", self.g, 0.1, 2));
+                dims.push(number(ctx, "k", "Body height", self.k, 0.1, 2));
+            }
+            if self.kind == NutKind::Thumb {
+                dims.push(number(ctx, "e", "Knurl diameter", self.e, 0.1, 2));
+                dims.push(number(ctx, "k", "Knurl height", self.k, 0.1, 2));
+            }
             if self.kind == NutKind::Nyloc {
                 dims.push(number(
                     ctx,
@@ -354,6 +511,9 @@ impl Part for Nut {
             length("m", "Height"),
             length("collar_d", "Collar diameter"),
             length("collar_h", "Collar height"),
+            length("e", "Span"),
+            length("g", "Wing thickness"),
+            length("k", "Body height"),
         ]
     }
 
@@ -386,6 +546,9 @@ impl Part for Nut {
                 "m" => self.m = *value,
                 "collar_d" => self.collar_d = *value,
                 "collar_h" => self.collar_h = *value,
+                "e" => self.e = *value,
+                "g" => self.g = *value,
+                "k" => self.k = *value,
                 _ => return false,
             },
             PanelEvent::Toggle { id, on } => match id.as_str() {
@@ -427,7 +590,22 @@ impl Part for Nut {
         nut.size = size.into();
         nut.refill();
         if !nut.size.eq_ignore_ascii_case(size) && arg_str(args, "size").is_some() {
-            return Err(format!("{} has no size `{size}`", nut.standard));
+            // A size the table lacks is made in proportion to its thread.
+            let (d, pitch) = standards::metric_any(size)
+                .ok_or_else(|| format!("{} has no size `{size}`", nut.standard))?;
+            nut.proportion(size, d, pitch);
+        }
+        if arg_str(args, "size").is_none()
+            && let Some(d) = arg_f64(args, "d")
+            && (d - nut.d).abs() > 1e-9
+        {
+            let name = standards::size_name(d);
+            if nut.sizes().iter().any(|s| s.eq_ignore_ascii_case(&name)) {
+                nut.size = name;
+                nut.refill();
+            } else {
+                nut.proportion(&name, d, standards::coarse_pitch(d));
+            }
         }
         for (key, slot) in [
             ("d", &mut nut.d),
@@ -436,6 +614,9 @@ impl Part for Nut {
             ("m", &mut nut.m),
             ("collar_d", &mut nut.collar_d),
             ("collar_h", &mut nut.collar_h),
+            ("e", &mut nut.e),
+            ("g", &mut nut.g),
+            ("k", &mut nut.k),
         ] {
             if let Some(v) = arg_f64(args, key) {
                 *slot = v;
@@ -452,6 +633,9 @@ impl Part for Nut {
 impl Nut {
     /// The side view, the bore behind the surface.
     fn drawing(&self, ctx: &Ctx) -> Widget {
+        if matches!(self.kind, NutKind::Wing | NutKind::Thumb) {
+            return self.hand_drawing(ctx);
+        }
         let mut s = Sketch::new(ctx.focus);
         let m = self.m;
         let r = self.d / 2.0;
@@ -491,6 +675,64 @@ impl Nut {
             r,
             0.0,
             -off,
+            format!("{} × {}", self.size, fmt(self.pitch)),
+        );
+        s.finish("nut")
+    }
+
+    /// A wing or thumb nut's side view: the body and what is turned by
+    /// hand on it.
+    fn hand_drawing(&self, ctx: &Ctx) -> Widget {
+        let mut s = Sketch::new(ctx.focus);
+        let (m, r, half) = (self.m, self.d / 2.0, self.e / 2.0);
+        let off = Sketch::standoff(self.e.max(m));
+        let body = self.s / 2.0;
+        match self.kind {
+            NutKind::Wing => {
+                s.rect([-body, 0.0], [body, self.k]);
+                let wing = self.wing();
+                let other: Vec<[f64; 2]> = wing.iter().map(|p| [-p[0], p[1]]).collect();
+                s.poly(&wing, DiagramStroke::Outline, false);
+                s.poly(&other, DiagramStroke::Outline, false);
+                s.width("e", -half, half, m, off, format!("e {}", fmt(self.e)));
+                s.width("s", -body, body, 0.0, -off, format!("d2 {}", fmt(self.s)));
+                s.height(
+                    "k",
+                    -half,
+                    0.0,
+                    self.k,
+                    off * 0.6,
+                    format!("k {}", fmt(self.k)),
+                );
+                s.callout(
+                    "g",
+                    [half - 0.5, m / 2.0],
+                    [half + off, m / 2.0 + off],
+                    format!("g {}", fmt(self.g)),
+                );
+            }
+            _ => {
+                let top = m - self.k;
+                s.rect([-body, 0.0], [body, top]);
+                s.rect([-half, top], [half, m]);
+                let n = 11;
+                for i in 1..n {
+                    let x = -half + self.e * i as f64 / n as f64;
+                    s.line(&[[x, top], [x, m]], DiagramStroke::Thin);
+                }
+                s.width("e", -half, half, m, off, format!("dk {}", fmt(self.e)));
+                s.width("s", -body, body, 0.0, -off, format!("ds {}", fmt(self.s)));
+                s.height("k", half, top, m, -off * 0.6, format!("k {}", fmt(self.k)));
+            }
+        }
+        s.height("m", -half, 0.0, m, off * 1.4, format!("h {}", fmt(m)));
+        s.hidden(&[[-r, 0.0], [-r, m]]);
+        s.hidden(&[[r, 0.0], [r, m]]);
+        s.axis(0.0, -off * 0.4, m + off * 0.4);
+        s.callout(
+            "d",
+            [r, m * 0.3],
+            [half + off * 0.8, -off * 0.6],
             format!("{} × {}", self.size, fmt(self.pitch)),
         );
         s.finish("nut")
@@ -560,6 +802,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!((nut.kind, nut.s, nut.m), (NutKind::Nyloc, 8.0, 5.0));
-        assert!(Nut::with_args(&json!({"kind": "wing"}), &Defaults::default()).is_err());
+        assert!(Nut::with_args(&json!({"kind": "flange"}), &Defaults::default()).is_err());
+    }
+
+    #[test]
+    fn a_wing_nut_and_a_thumb_nut_are_their_standards() {
+        let wing = Nut::new(NutKind::Wing, "M6", &Defaults::default());
+        assert_eq!(
+            (wing.s, wing.m, wing.e, wing.g, wing.k),
+            (11.5, 16.0, 31.5, 2.5, 6.5)
+        );
+        assert_eq!(wing.label(), "M6 wing nut");
+        assert_eq!(wing.problem(), None);
+        assert_eq!(wing.ops().len(), 3, "the body and two wings");
+        let thumb = Nut::new(NutKind::Thumb, "M3", &Defaults::default());
+        assert_eq!((thumb.s, thumb.m, thumb.e, thumb.k), (6.0, 7.5, 12.0, 2.5));
+        assert_eq!(thumb.ops().len(), 2);
+        // M3 is under the wing nuts' table: the nearest size, M4, is taken.
+        let small = Nut::new(NutKind::Wing, "M3", &Defaults::default());
+        assert_eq!(small.size, "M4");
+    }
+
+    #[test]
+    fn a_size_off_the_table_is_made_in_proportion() {
+        let nut = Nut::with_args(&json!({"size": "M7"}), &Defaults::default()).unwrap();
+        assert_eq!(
+            (nut.size.as_str(), nut.d, nut.pitch, nut.s, nut.m),
+            ("M7", 7.0, 1.0, 11.7, 6.0)
+        );
+        assert_eq!(nut.problem(), None);
+        let wing =
+            Nut::with_args(&json!({"kind": "wing", "d": 3.0}), &Defaults::default()).unwrap();
+        assert_eq!((wing.size.as_str(), wing.e, wing.m), ("M3", 15.0, 7.5));
+        assert_eq!(wing.problem(), None);
     }
 }

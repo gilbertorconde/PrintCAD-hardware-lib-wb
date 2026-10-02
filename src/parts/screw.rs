@@ -30,16 +30,19 @@ pub enum Head {
     Hex,
     LowHead,
     Set,
+    /// A knurled disc on a shoulder, turned by hand.
+    Thumb,
 }
 
 impl Head {
-    pub const ALL: [Head; 6] = [
+    pub const ALL: [Head; 7] = [
         Head::SocketCap,
         Head::Button,
         Head::Countersunk,
         Head::Hex,
         Head::LowHead,
         Head::Set,
+        Head::Thumb,
     ];
 
     pub fn name(self) -> &'static str {
@@ -50,6 +53,7 @@ impl Head {
             Head::Hex => "Hex head",
             Head::LowHead => "Low head cap",
             Head::Set => "Set screw",
+            Head::Thumb => "Knurled thumb",
         }
     }
 
@@ -62,6 +66,7 @@ impl Head {
             Head::Hex => "hex bolt",
             Head::LowHead => "low head screw",
             Head::Set => "set screw",
+            Head::Thumb => "thumb screw",
         }
     }
 
@@ -73,6 +78,7 @@ impl Head {
             Head::Hex => "screw-hex",
             Head::LowHead => "screw-low-head",
             Head::Set => "screw-set",
+            Head::Thumb => "screw-thumb",
         }
     }
 
@@ -85,6 +91,7 @@ impl Head {
             Head::Hex => "hex_bolt",
             Head::LowHead => "low_head",
             Head::Set => "set_screw",
+            Head::Thumb => "thumb",
         }
     }
 
@@ -105,11 +112,27 @@ impl Head {
             Head::Hex => &[standards::ISO_4017],
             Head::LowHead => &[standards::DIN_7984],
             Head::Set => &[standards::ISO_4026],
+            Head::Thumb => &[standards::DIN_464],
         }
     }
 
     fn has_socket(self) -> bool {
-        self != Head::Hex
+        !matches!(self, Head::Hex | Head::Thumb)
+    }
+
+    /// The head a size off the tables gets, in proportion to its thread:
+    /// `(dk, k, s, t)` as the standards run.
+    fn proportions(self, d: f64) -> (f64, f64, f64, f64) {
+        let r = |v: f64| (v * 10.0).round() / 10.0;
+        match self {
+            Head::SocketCap => (r(1.5 * d), r(d), r(0.8 * d), r(0.5 * d)),
+            Head::LowHead => (r(1.5 * d), r(0.6 * d), r(0.7 * d), r(0.4 * d)),
+            Head::Button => (r(1.9 * d), r(0.55 * d), r(0.55 * d), r(0.3 * d)),
+            Head::Countersunk => (r(2.0 * d), r(0.6 * d), r(0.6 * d), r(0.35 * d)),
+            Head::Hex => (r(1.6 * d + 0.5), r(0.65 * d), 0.0, 0.0),
+            Head::Set => (r(0.6 * d), 0.0, r(0.5 * d), r(0.5 * d)),
+            Head::Thumb => (r(4.0 * d), r(2.4 * d), r(2.0 * d), r(0.8 * d)),
+        }
     }
 }
 
@@ -223,8 +246,25 @@ impl Screw {
     fn standard_thread_length(&self) -> f64 {
         match self.head {
             Head::Set | Head::Hex => 0.0,
+            Head::Thumb => 3.0 * self.d,
             _ => 2.0 * self.d + 12.0,
         }
+    }
+
+    /// Size the screw `size`, a diameter off the tables, in proportion
+    /// to its thread.
+    fn proportion(&mut self, size: &str, d: f64, pitch: f64) {
+        self.size = size.trim().to_uppercase();
+        self.d = d;
+        self.pitch = pitch;
+        (self.dk, self.k, self.s, self.t) = self.head.proportions(d);
+        self.length = default_length(d);
+        self.thread_length = self.standard_thread_length();
+    }
+
+    /// How many facets a knurled head shows round.
+    fn knurl_facets(&self) -> u32 {
+        ((std::f64::consts::PI * self.dk / 1.2).round() as u32).clamp(24, 60)
     }
 
     /// The shank's length: from under the head, or a countersunk head's
@@ -306,6 +346,20 @@ impl Screw {
                     geom::crown(e, -self.length - 1.0, self.k, crown, 30.0, false, true),
                 ]
             }
+            Head::Thumb => {
+                // The knurled disc, faceted, fused on the shoulder's top
+                // and a little down into it.
+                let n = self.knurl_facets();
+                let across = self.dk * (std::f64::consts::PI / f64::from(n)).cos();
+                let z = self.k - self.t;
+                vec![geom::prism(
+                    &geom::regular(n, across),
+                    Vec::new(),
+                    z,
+                    self.t,
+                    BooleanOp::Fuse,
+                )]
+            }
             _ => Vec::new(),
         }
     }
@@ -382,6 +436,24 @@ impl Screw {
                     BooleanOp::NewSolid,
                 )]
             }
+            Head::Thumb => {
+                // The shank and the shoulder, reaching up into the disc
+                // that is fused on after the thread.
+                let rs = self.s / 2.0;
+                let top = self.k - self.t + (self.t / 2.0).min(0.5);
+                vec![revolve(
+                    &[
+                        [0.0, -l],
+                        [r - c, -l],
+                        [r, -l + c],
+                        [r, 0.0],
+                        [rs, 0.0],
+                        [rs, top],
+                        [0.0, top],
+                    ],
+                    BooleanOp::NewSolid,
+                )]
+            }
         }
     }
 }
@@ -412,6 +484,14 @@ impl Part for Screw {
             if self.head == Head::Countersunk && self.length <= self.k {
                 return Some("A countersunk screw must be longer than its head.".into());
             }
+        }
+        if self.head == Head::Thumb
+            && (self.s <= self.d || self.s >= self.dk || self.t <= 0.0 || self.t >= self.k)
+        {
+            return Some(
+                "The shoulder must lie between the thread and the knurl, and the knurl within the head."
+                    .into(),
+            );
         }
         if self.head.has_socket() && self.socket {
             if self.s <= 0.0 || self.t <= 0.0 {
@@ -500,6 +580,12 @@ impl Part for Screw {
                     dims.push(number(ctx, "dk", "Across flats", self.dk, 0.1, 2));
                     dims.push(number(ctx, "k", "Head height", self.k, 0.1, 2));
                 }
+                Head::Thumb => {
+                    dims.push(number(ctx, "dk", "Knurl diameter", self.dk, 0.1, 2));
+                    dims.push(number(ctx, "k", "Head height", self.k, 0.1, 2));
+                    dims.push(number(ctx, "s", "Shoulder diameter", self.s, 0.1, 2));
+                    dims.push(number(ctx, "t", "Knurl height", self.t, 0.1, 2));
+                }
                 _ => {
                     dims.push(number(ctx, "dk", "Head diameter", self.dk, 0.1, 2));
                     dims.push(number(ctx, "k", "Head height", self.k, 0.1, 2));
@@ -530,6 +616,11 @@ impl Part for Screw {
             ));
         }
         widgets.push(group("Options", true, options));
+        widgets.push(group(
+            "Holes for it",
+            true,
+            vec![super::text(super::holes_text(self.d, self.pitch))],
+        ));
         widgets.extend(note(self.problem()));
         widgets
     }
@@ -629,7 +720,26 @@ impl Part for Screw {
             screw.thread_length = screw.standard_thread_length();
         }
         if !screw.size.eq_ignore_ascii_case(size) && arg_str(args, "size").is_some() {
-            return Err(format!("{} has no size `{size}`", screw.standard));
+            // A size the table lacks is made in proportion to its thread.
+            let (d, pitch) = standards::metric_any(size)
+                .ok_or_else(|| format!("{} has no size `{size}`", screw.standard))?;
+            screw.proportion(size, d, pitch);
+        }
+        if arg_str(args, "size").is_none()
+            && let Some(d) = arg_f64(args, "d")
+            && (d - screw.d).abs() > 1e-9
+        {
+            // A diameter alone names its size, from the table or in
+            // proportion.
+            let name = standards::size_name(d);
+            if screw.sizes().iter().any(|s| s.eq_ignore_ascii_case(&name)) {
+                screw.size = name;
+                screw.refill();
+                screw.length = default_length(screw.d);
+                screw.thread_length = screw.standard_thread_length();
+            } else {
+                screw.proportion(&name, d, standards::coarse_pitch(d));
+            }
         }
         if let Some(length) = arg_f64(args, "length") {
             screw.length = length;
@@ -745,6 +855,18 @@ impl Screw {
                 s.line(&[[-a, 0.0], [-a, k]], DiagramStroke::Outline);
                 s.line(&[[a, 0.0], [a, k]], DiagramStroke::Outline);
             }
+            Head::Thumb => {
+                let (rs, rk, t) = (self.s / 2.0, self.dk / 2.0, self.t);
+                s.rect([-rs, 0.0], [rs, k - t]);
+                s.rect([-rk, k - t], [rk, k]);
+                let n = 9;
+                for i in 1..n {
+                    let x = -rk + 2.0 * rk * i as f64 / n as f64;
+                    s.line(&[[x, k - t], [x, k]], DiagramStroke::Thin);
+                }
+                s.height("t", rk, k - t, k, -off * 0.6, format!("t {}", fmt(t)));
+                s.width("s", -rs, rs, 0.0, -off * 0.5, format!("ds {}", fmt(self.s)));
+            }
             Head::Set => {
                 let point = (self.d - self.dk) / 2.0;
                 let (body, drawn_set, broken_set) = shank(0.0, r, 0.0, self.length);
@@ -846,6 +968,38 @@ pub fn bound_fields(widgets: &[Widget]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thumb_screw_is_a_knurled_disc_on_a_shoulder() {
+        let screw = Screw::new(Head::Thumb, "M4", &Defaults::default());
+        assert_eq!((screw.dk, screw.k, screw.s, screw.t), (16.0, 9.5, 8.0, 3.5));
+        assert_eq!(screw.thread_length, 12.0, "three diameters");
+        assert_eq!(screw.problem(), None);
+        let roles: Vec<_> = screw.ops().iter().map(|op| op.boolean_op()).collect();
+        assert_eq!(roles, [Some(BooleanOp::NewSolid), Some(BooleanOp::Fuse)]);
+    }
+
+    #[test]
+    fn a_size_off_the_table_is_made_in_proportion() {
+        let d = Defaults::default();
+        let screw = Screw::with_args(&json!({"size": "M7"}), &d).unwrap();
+        assert_eq!(
+            (screw.size.as_str(), screw.d, screw.pitch),
+            ("M7", 7.0, 1.0)
+        );
+        assert_eq!((screw.dk, screw.k, screw.s, screw.t), (10.5, 7.0, 5.6, 3.5));
+        assert_eq!(screw.length, 25.0);
+        assert_eq!(screw.problem(), None);
+        let hex = Screw::with_args(&json!({"head": "hex_bolt", "d": 14.0}), &d).unwrap();
+        assert_eq!(
+            (hex.size.as_str(), hex.dk, hex.k, hex.pitch),
+            ("M14", 22.9, 9.1, 2.0)
+        );
+        assert!(hex.custom);
+        let listed = Screw::with_args(&json!({"d": 5.0}), &d).unwrap();
+        assert_eq!((listed.size.as_str(), listed.dk), ("M5", 8.5));
+        assert!(Screw::with_args(&json!({"size": "big"}), &d).is_err());
+    }
     use printcad_bench_sdk::api::kernel_api::SweepKind;
     use printcad_bench_sdk::json;
 
@@ -1001,7 +1155,7 @@ mod tests {
         assert_eq!((screw.dk, screw.length), (7.6, 16.0));
         assert!(screw.thread);
         assert!(Screw::with_args(&json!({"head": "pan"}), &Defaults::default()).is_err());
-        assert!(Screw::with_args(&json!({"size": "M7"}), &Defaults::default()).is_err());
+        assert!(Screw::with_args(&json!({"size": "7 mm"}), &Defaults::default()).is_err());
         let custom = Screw::with_args(&json!({"dk": 6.0}), &Defaults::default()).unwrap();
         assert!(custom.custom && custom.dk == 6.0);
     }
