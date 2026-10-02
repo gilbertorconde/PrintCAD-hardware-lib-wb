@@ -11,10 +11,10 @@ pub mod parts;
 pub mod standards;
 
 use kernel_api::TessellationSettings;
+use parts::extrusion::{Extrusion, Slots};
 use parts::nut::{Nut, NutKind};
 use parts::rod::{Rod, RodKind};
 use parts::screw::{Head, Screw};
-use parts::extrusion::{Extrusion, Slots};
 use parts::tnut::{TNut, TNutKind};
 use parts::{Defaults, Hardware, Insert, Spring};
 
@@ -34,16 +34,37 @@ fn main() {
         ("nut-m4-thread", Hardware::Nut(nut)),
         ("rod-m6-thread", Hardware::Rod(rod)),
         ("spring", Hardware::Spring(Spring::default())),
-        ("extrusion-4040", Hardware::Extrusion(Extrusion::new(40, 1, 1, 20.0))),
-        ("extrusion-2040", Hardware::Extrusion(Extrusion::new(20, 1, 2, 20.0))),
+        (
+            "extrusion-4040",
+            Hardware::Extrusion(Extrusion::new(40, 1, 1, 20.0)),
+        ),
+        ("extrusion-vslot-2020", {
+            let mut e = Extrusion::new(20, 1, 1, 20.0);
+            e.v_slot = true;
+            e.refill();
+            Hardware::Extrusion(e)
+        }),
+        (
+            "extrusion-2040",
+            Hardware::Extrusion(Extrusion::new(20, 1, 2, 20.0)),
+        ),
         ("extrusion-2020-three", {
             let mut e = Extrusion::new(20, 1, 1, 20.0);
             e.slots = Slots::Three;
             Hardware::Extrusion(e)
         }),
-        ("tnut-spring-20", Hardware::TNut(TNut::new(TNutKind::SpringBall, 20, "M5", &d))),
-        ("tnut-twist-20", Hardware::TNut(TNut::new(TNutKind::Twist, 20, "M4", &d))),
-        ("tnut-rollin-30", Hardware::TNut(TNut::new(TNutKind::RollIn, 30, "M5", &d))),
+        (
+            "tnut-spring-20",
+            Hardware::TNut(TNut::new(TNutKind::SpringBall, 20, "M5", &d)),
+        ),
+        (
+            "tnut-twist-20",
+            Hardware::TNut(TNut::new(TNutKind::Twist, 20, "M4", &d)),
+        ),
+        (
+            "tnut-rollin-30",
+            Hardware::TNut(TNut::new(TNutKind::RollIn, 30, "M5", &d)),
+        ),
     ];
     let mut kernel = kernel_ogeom::OgeomKernel::new();
     let detail = TessellationSettings::default();
@@ -68,17 +89,25 @@ fn main() {
         let light = [-0.4f64, 0.6, 0.7];
         let mut tris: Vec<(f64, [[f64; 2]; 3], f64)> = Vec::new();
         for t in mesh.indices.chunks(3) {
-            let p: Vec<[f64; 3]> = t.iter().map(|i| view(mesh.positions[*i as usize])).collect();
+            let p: Vec<[f64; 3]> = t
+                .iter()
+                .map(|i| view(mesh.positions[*i as usize]))
+                .collect();
             let (a, b, c) = (p[0], p[1], p[2]);
             let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
             let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
             let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             if len < 1e-12 || n[2] <= 0.0 {
                 continue;
             }
             let n = [n[0] / len, n[1] / len, n[2] / len];
-            let shade = (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).max(0.0) * 0.75 + 0.25;
+            let shade =
+                (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).max(0.0) * 0.75 + 0.25;
             let depth = (a[2] + b[2] + c[2]) / 3.0;
             tris.push((depth, [[a[0], a[1]], [b[0], b[1]], [c[0], c[1]]], shade));
         }
@@ -101,7 +130,13 @@ fn main() {
         for (_, t, shade) in &tris {
             let pts: Vec<String> = t
                 .iter()
-                .map(|p| format!("{:.1},{:.1}", (p[0] - x0) * scale + 20.0, (y1 - p[1]) * scale + 20.0))
+                .map(|p| {
+                    format!(
+                        "{:.1},{:.1}",
+                        (p[0] - x0) * scale + 20.0,
+                        (y1 - p[1]) * scale + 20.0
+                    )
+                })
                 .collect();
             let c = (shade * 200.0) as u8;
             svg.push_str(&format!(

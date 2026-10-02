@@ -100,6 +100,9 @@ pub struct Extrusion {
     #[serde(default)]
     pub shoulder: f64,
     pub depth: f64,
+    /// The floor's width; 0 for what 45° walls from the shoulder leave.
+    #[serde(default)]
+    pub floor: f64,
     pub hole: f64,
     pub corner: f64,
     #[serde(default)]
@@ -134,6 +137,7 @@ impl Extrusion {
             cavity: 0.0,
             shoulder: 0.0,
             depth: 0.0,
+            floor: 0.0,
             hole: 0.0,
             corner: 0.0,
             custom: false,
@@ -142,8 +146,9 @@ impl Extrusion {
         e
     }
 
+    /// The series it is cut from: the V-slot's when it has V lips.
     pub fn table(&self) -> &'static ExtrusionSeries {
-        standards::extrusion(self.series).unwrap_or(&standards::EXTRUSIONS[0])
+        standards::extrusion_series(self.series, self.v_slot).unwrap_or(&standards::EXTRUSIONS[0])
     }
 
     pub fn refill(&mut self) {
@@ -154,6 +159,7 @@ impl Extrusion {
         self.cavity = t.cavity;
         self.shoulder = t.shoulder;
         self.depth = t.depth;
+        self.floor = t.floor;
         self.hole = t.hole;
         self.corner = t.corner;
     }
@@ -179,9 +185,14 @@ impl Extrusion {
         }
     }
 
-    /// The cavity's floor width, where its 45° walls end.
+    /// The cavity's floor width: as set, or where 45° walls from the
+    /// shoulder end.
     fn floor(&self) -> f64 {
-        self.cavity - 2.0 * (self.depth - self.shoulder())
+        if self.floor > 0.0 {
+            self.floor
+        } else {
+            self.cavity - 2.0 * (self.depth - self.shoulder())
+        }
     }
 
     /// The core a cell keeps between its cavity floors.
@@ -291,6 +302,14 @@ impl Extrusion {
                 section
                     .circles
                     .push(([sx * (w - d), sy * (h - d)], t.corner_hole));
+            }
+            if t.corner_tri > 0.0 {
+                let (a, b) = (self.lip, self.lip + t.corner_tri);
+                section.hollows.push(ccw(vec![
+                    [sx * (w - a), sy * (h - a)],
+                    [sx * (w - a), sy * (h - b)],
+                    [sx * (w - b), sy * (h - a)],
+                ]));
             }
             if t.corner_void > 0.0 {
                 let (a, b) = (t.corner_wall, t.corner_wall + t.corner_void);
@@ -513,7 +532,7 @@ impl Part for Extrusion {
         if shoulder <= self.lip || shoulder >= self.depth {
             return Some("The shoulder must lie between the lip and the floor.".into());
         }
-        if self.floor() < 1.0 {
+        if self.floor() < 1.0 || self.floor() > self.cavity {
             return Some(
                 "The cavity's walls meet before its floor: a deeper shoulder or a wider cavity."
                     .into(),
@@ -596,7 +615,7 @@ impl Part for Extrusion {
                     .position(|s| *s == self.slots)
                     .unwrap_or(0),
             ),
-            toggle("v_slot", "V-slot lips", self.v_slot),
+            toggle("v_slot", "V-slot (OpenBuilds)", self.v_slot),
         ];
         let mut dims = vec![toggle("custom", "Custom slot", self.custom)];
         if self.custom {
@@ -612,6 +631,7 @@ impl Part for Extrusion {
                 2,
             ));
             dims.push(number(ctx, "depth", "Slot depth", self.depth, 0.1, 2));
+            dims.push(number(ctx, "floor", "Floor width", self.floor(), 0.1, 2));
             dims.push(number(ctx, "hole", "Centre hole", self.hole, 0.0, 2));
             dims.push(number(ctx, "corner", "Corner radius", self.corner, 0.0, 2));
         }
@@ -630,6 +650,7 @@ impl Part for Extrusion {
             length("cavity", "Cavity"),
             length("shoulder", "Shoulder depth"),
             length("depth", "Slot depth"),
+            length("floor", "Floor width"),
             length("hole", "Centre hole"),
             length("corner", "Corner radius"),
         ]
@@ -657,12 +678,18 @@ impl Part for Extrusion {
                 "cavity" => self.cavity = *value,
                 "shoulder" => self.shoulder = *value,
                 "depth" => self.depth = *value,
+                "floor" => self.floor = *value,
                 "hole" => self.hole = *value,
                 "corner" => self.corner = *value,
                 _ => return false,
             },
             PanelEvent::Toggle { id, on } => match id.as_str() {
-                "v_slot" => self.v_slot = *on,
+                "v_slot" => {
+                    self.v_slot = *on;
+                    if !self.custom {
+                        self.refill();
+                    }
+                }
                 "custom" => {
                     self.custom = *on;
                     if !*on {
@@ -727,6 +754,7 @@ impl Part for Extrusion {
         }
         if let Some(on) = arg_bool(args, "v_slot") {
             e.v_slot = on;
+            e.refill();
         }
         for (key, slot) in [
             ("opening", &mut e.opening),
@@ -734,6 +762,7 @@ impl Part for Extrusion {
             ("cavity", &mut e.cavity),
             ("shoulder", &mut e.shoulder),
             ("depth", &mut e.depth),
+            ("floor", &mut e.floor),
             ("hole", &mut e.hole),
             ("corner", &mut e.corner),
         ] {
@@ -882,8 +911,10 @@ mod tests {
 
     #[test]
     fn every_series_outline_is_simple_and_weighs_what_the_catalogue_says() {
-        for series in standards::EXTRUSIONS {
-            let e = Extrusion::new(series.cell, 1, 1, 10.0);
+        for series in standards::EXTRUSIONS.iter().chain([&standards::VSLOT_20]) {
+            let mut e = Extrusion::new(series.cell, 1, 1, 10.0);
+            e.v_slot = series.floor > 0.0;
+            e.refill();
             assert_eq!(e.problem(), None, "{}", series.cell);
             let s = e.section();
             assert!(simple(&s.outline), "{}", series.cell);
@@ -962,14 +993,31 @@ mod tests {
     }
 
     #[test]
-    fn a_v_slot_cuts_its_lips_back() {
+    fn a_v_slot_is_openbuilds_profile() {
         let mut e = Extrusion::new(20, 1, 1, 10.0);
-        let plain = e.section().outline;
+        let plain = e.section();
         e.v_slot = true;
-        let v = e.section().outline;
-        assert_eq!(plain.len(), v.len());
-        assert_ne!(plain, v);
+        e.refill();
+        assert_eq!(
+            (e.opening, e.lip, e.cavity, e.depth, e.floor),
+            (5.68, 1.8, 11.0, 6.1, 5.68)
+        );
         assert_eq!(e.problem(), None);
+        let s = e.section();
+        assert_ne!(plain.outline, s.outline);
+        assert!(simple(&s.outline));
+        // The V opens 9.28 at the surface and the corners are hollow.
+        assert!(
+            s.outline
+                .iter()
+                .any(|p| (p[1] + 10.0).abs() < 1e-9 && (p[0].abs() - 4.64).abs() < 1e-9)
+        );
+        assert_eq!(s.hollows.len(), 4);
+        let a = section_area(&e);
+        assert!((a - 164.0).abs() < 164.0 * 0.03, "{a}");
+        e.v_slot = false;
+        e.refill();
+        assert_eq!(e.section().outline, plain.outline, "back to the T-slot");
     }
 
     #[test]

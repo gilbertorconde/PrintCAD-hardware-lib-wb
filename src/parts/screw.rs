@@ -217,12 +217,13 @@ impl Screw {
     }
 
     /// The thread length the standard gives a screw of this size: twice
-    /// the diameter and six, as the socket head standards have it; a set
-    /// screw and a hex bolt are threaded to the head.
+    /// the diameter and twelve, the socket head standards' reference
+    /// length for screws up to 125 long; a set screw and a hex bolt are
+    /// threaded to the head.
     fn standard_thread_length(&self) -> f64 {
         match self.head {
             Head::Set | Head::Hex => 0.0,
-            _ => 2.0 * self.d + 6.0,
+            _ => 2.0 * self.d + 12.0,
         }
     }
 
@@ -861,7 +862,7 @@ mod tests {
             (3.0, 0.5, 5.5, 3.0, 2.5)
         );
         assert_eq!(screw.length, 10.0);
-        assert_eq!(screw.thread_length, 12.0);
+        assert_eq!(screw.thread_length, 18.0);
         assert_eq!(screw.label(), "M3 × 10 cap screw");
         assert_eq!(screw.problem(), None);
     }
@@ -952,9 +953,9 @@ mod tests {
         let ops = screw.ops();
         assert_eq!(ops.len(), 3, "body, thread, then the recess");
         let (height, z_top) = helix(&ops);
-        // 12 of thread, a pitch of lead-in and a pitch past the tip.
-        assert!((height - 13.0).abs() < 1e-9, "{height}");
-        assert!((z_top - -8.0).abs() < 1e-9, "starts 8 below the head");
+        // 18 of thread, a pitch of lead-in and a pitch past the tip.
+        assert!((height - 19.0).abs() < 1e-9, "{height}");
+        assert!((z_top - -2.0).abs() < 1e-9, "starts 2 below the head");
         screw.length = 8.0;
         let (height, _) = helix(&screw.ops());
         assert!(

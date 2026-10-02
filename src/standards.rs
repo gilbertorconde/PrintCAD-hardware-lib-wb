@@ -194,11 +194,11 @@ pub const ISO_10642: ScrewTable = ScrewTable {
     name: "ISO 10642 / DIN 7991",
     inch: false,
     rows: &[
-        row("M3", 3.0, 0.5, 6.0, 1.7, 2.0, 1.1),
-        row("M4", 4.0, 0.7, 8.0, 2.3, 2.5, 1.5),
-        row("M5", 5.0, 0.8, 10.0, 2.8, 3.0, 1.9),
-        row("M6", 6.0, 1.0, 12.0, 3.3, 4.0, 2.2),
-        row("M8", 8.0, 1.25, 16.0, 4.4, 5.0, 3.0),
+        row("M3", 3.0, 0.5, 6.0, 1.7, 2.0, 1.2),
+        row("M4", 4.0, 0.7, 8.0, 2.3, 2.5, 1.8),
+        row("M5", 5.0, 0.8, 10.0, 2.8, 3.0, 2.3),
+        row("M6", 6.0, 1.0, 12.0, 3.3, 4.0, 2.5),
+        row("M8", 8.0, 1.25, 16.0, 4.4, 5.0, 3.5),
         row("M10", 10.0, 1.5, 20.0, 5.5, 6.0, 3.6),
         row("M12", 12.0, 1.75, 24.0, 6.5, 8.0, 4.3),
         row("M16", 16.0, 2.0, 30.0, 7.5, 10.0, 5.3),
@@ -575,8 +575,13 @@ pub struct ExtrusionSeries {
     pub cavity: f64,
     pub shoulder: f64,
     pub depth: f64,
+    /// The floor's width: 0 for what 45° walls from the shoulder leave.
+    pub floor: f64,
     pub hole: f64,
     pub corner: f64,
+    /// A hollow right triangle in each outer corner block, its right angle
+    /// a lip's thickness in from both faces: the legs' length; 0 for none.
+    pub corner_tri: f64,
     /// A hole in each outer corner block: its diameter and its centre's
     /// distance in from both outer faces; 0 for none.
     pub corner_hole: f64,
@@ -599,8 +604,10 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         cavity: 12.0,
         shoulder: 3.0,
         depth: 6.0,
+        floor: 0.0,
         hole: 4.2,
         corner: 1.0,
+        corner_tri: 0.0,
         corner_hole: 0.0,
         corner_hole_in: 0.0,
         corner_void: 0.0,
@@ -615,8 +622,10 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         cavity: 16.5,
         shoulder: 4.75,
         depth: 9.0,
+        floor: 0.0,
         hole: 6.8,
         corner: 2.0,
+        corner_tri: 0.0,
         corner_hole: 4.2,
         corner_hole_in: 3.4,
         corner_void: 0.0,
@@ -631,8 +640,10 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
         cavity: 20.0,
         shoulder: 7.5,
         depth: 12.5,
+        floor: 0.0,
         hole: 10.5,
         corner: 3.0,
+        corner_tri: 0.0,
         corner_hole: 0.0,
         corner_hole_in: 0.0,
         corner_void: 6.0,
@@ -642,8 +653,50 @@ pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
     },
 ];
 
+/// OpenBuilds' V-slot 20 series: the lips cut back at 45° to a 5.68
+/// throat 1.8 deep, an 11 cavity with 1.64 shoulders closing at 45° to a
+/// 5.68 floor 6.1 deep, and a hollow triangle behind each corner.
+pub const VSLOT_20: ExtrusionSeries = ExtrusionSeries {
+    cell: 20,
+    opening: 5.68,
+    lip: 1.8,
+    cavity: 11.0,
+    shoulder: 3.44,
+    depth: 6.1,
+    floor: 5.68,
+    hole: 4.2,
+    corner: 1.5,
+    corner_tri: 1.63,
+    corner_hole: 0.0,
+    corner_hole_in: 0.0,
+    corner_void: 0.0,
+    corner_wall: 0.0,
+    web: 1.5,
+    area_mm2: 164.0,
+};
+
 pub fn extrusion(cell: u32) -> Option<&'static ExtrusionSeries> {
     EXTRUSIONS.iter().find(|s| s.cell == cell)
+}
+
+/// The series a profile is cut from: the V-slot's for a 20 series with
+/// V lips, else the cell's.
+pub fn extrusion_series(cell: u32, v_slot: bool) -> Option<&'static ExtrusionSeries> {
+    if v_slot && cell == 20 {
+        Some(&VSLOT_20)
+    } else {
+        extrusion(cell)
+    }
+}
+
+/// A series' floor width: as given, or what 45° walls from the shoulder
+/// leave.
+pub fn series_floor(s: &ExtrusionSeries) -> f64 {
+    if s.floor > 0.0 {
+        s.floor
+    } else {
+        s.cavity - 2.0 * (s.depth - s.shoulder)
+    }
 }
 
 /// A heat-set threaded insert for printed parts, as the common brass
@@ -712,8 +765,9 @@ const fn bearing(name: &'static str, bore: f64, outer: f64, width: f64) -> Beari
     }
 }
 
-/// Deep groove ball bearings, the sizes printed designs reach for.
-pub const BALL_BEARINGS: [BearingRow; 24] = [
+/// Deep groove ball bearings, the sizes printed designs reach for; the
+/// DIN 625 rows agree with BOLTS' table of the standard.
+pub const BALL_BEARINGS: [BearingRow; 35] = [
     bearing("MR85", 5.0, 8.0, 2.5),
     bearing("MR105", 5.0, 10.0, 4.0),
     bearing("MR115", 5.0, 11.0, 4.0),
@@ -738,6 +792,17 @@ pub const BALL_BEARINGS: [BearingRow; 24] = [
     bearing("6201", 12.0, 32.0, 10.0),
     bearing("6802", 15.0, 24.0, 5.0),
     bearing("6002", 15.0, 32.0, 9.0),
+    bearing("607", 7.0, 19.0, 6.0),
+    bearing("609", 9.0, 24.0, 7.0),
+    bearing("627", 7.0, 22.0, 7.0),
+    bearing("629", 9.0, 26.0, 8.0),
+    bearing("6003", 17.0, 35.0, 10.0),
+    bearing("6004", 20.0, 42.0, 12.0),
+    bearing("6005", 25.0, 47.0, 12.0),
+    bearing("6202", 15.0, 35.0, 11.0),
+    bearing("6203", 17.0, 40.0, 12.0),
+    bearing("6204", 20.0, 47.0, 14.0),
+    bearing("6205", 25.0, 52.0, 15.0),
 ];
 
 /// Linear ball bushings for round shafts.
@@ -846,17 +911,21 @@ mod tests {
                 );
             }
         }
-        for series in EXTRUSIONS {
+        for series in EXTRUSIONS.iter().chain([&VSLOT_20]) {
             assert!(series.cavity > series.opening);
             assert!(series.depth > series.shoulder && series.shoulder > series.lip);
-            let floor = series.cavity - 2.0 * (series.depth - series.shoulder);
+            let floor = series_floor(series);
             assert!(
                 floor > 0.0,
                 "{}: the walls meet before the floor",
                 series.cell
             );
-            // Every nut of the series sits on the floor under the lips.
-            for nut in T_NUTS.iter().filter(|n| n.series == series.cell) {
+            // Every nut of the series sits on the floor under the lips (the
+            // V-slot's nuts ride its sloped walls, so they are not checked).
+            for nut in T_NUTS
+                .iter()
+                .filter(|n| series.floor == 0.0 && n.series == series.cell)
+            {
                 assert!(nut.bottom <= floor + 0.01, "{} {:?}", series.cell, nut.kind);
                 assert!(nut.top < series.cavity, "{} {:?}", series.cell, nut.kind);
                 assert!(
