@@ -15,10 +15,10 @@ number takes a formula, as printCAD's own fields do.
 | --- | --- | --- |
 | Screws | socket head cap, button head, countersunk, hex bolt, low head cap, set screw | ISO 4762 / DIN 912, ASME B18.3 (inch), ISO 7380-1, ISO 10642, ISO 4017, DIN 7984, ISO 4026 |
 | Nuts | hex, thin, nylon insert lock, square | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557 |
-| T-slot nuts | sliding, drop-in, spring-ball drop-in, twist (turns to lock), roll-in with set screw, for the 20, 30 and 40 series | the extrusion maker's drawings (Misumi HNTT, HNTA, HNTP, HNTF, HNTR) |
+| T-slot nuts | sliding (with a neck in the slot), drop-in, spring-ball drop-in, twist (a quarter turn on two rounded corners locks it), roll-in with set screw, for the 20, 30 and 40 series | the makers' drawings and models: Framing Technology TSN, TN and DTNB for the 6, 8 and 10 mm slots, Misumi HNTA, HNTP, HNTR for the 20 and 40 series drop-ins |
 | Washers | plain, large, spring lock | ISO 7089, ISO 7093, DIN 127 |
 | Extrusions | T-slot profiles of the 20, 30 and 40 series (slots 6, 8 and 10): any cells (2020, 2040, 4080…), hollow between cells, all faces slotted or the one-, two- and three-slot variants; the OpenBuilds 20 series V-slot | the extrusion maker's drawings (Misumi HFS5, HFS6, HFS8); the V-slot as the BOLTS library traces it |
-| Inserts | heat-set threaded inserts, M2 to M6, standard and short, with the hole to drive them into | the common brass ones (CNC Kitchen, Ruthex) |
+| Inserts | heat-set threaded inserts, M2 to M8, standard and short, with the hole to drive them into | CNC Kitchen's dimension table and models |
 | Bearings | deep groove ball bearings (607 to 629, 6000 to 6005, 6200 to 6205), linear bushings (LM8UU…) | DIN 625 |
 | Magnets | discs, rings, blocks | common sizes, or any |
 | Rods | smooth shafts, threaded rods, lead screws, dowel pins | stock diameters |

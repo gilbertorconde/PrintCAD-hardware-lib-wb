@@ -1,7 +1,10 @@
-//! T-slot nuts for the extrusion series, as their maker draws them:
+//! T-slot nuts for the extrusion series, as their makers draw them:
 //! sliding, drop-in, spring-ball, twist and roll-in. A nut sits as it
 //! does in a slot that runs along Y with its opening up: its bottom on
-//! the cavity's floor at `z = 0`, its top under the lips.
+//! the cavity's floor at `z = 0`, its body under the lips and its neck,
+//! if it has one, up in the opening.
+
+use std::f64::consts::{PI, TAU};
 
 use printcad_bench_sdk::Value;
 use printcad_bench_sdk::api::kernel_api::{
@@ -99,14 +102,17 @@ pub struct TNut {
     pub straight: f64,
     /// Where the thread sits from one end; 0 for the middle.
     pub thread_at: f64,
+    /// The neck up in the slot's opening: how high it stands above the
+    /// body, and how wide it is. 0 for none.
+    #[serde(default)]
+    pub neck: f64,
+    #[serde(default)]
+    pub neck_w: f64,
     #[serde(default)]
     pub custom: bool,
     #[serde(default)]
     pub thread: bool,
 }
-
-/// The twist nut's ends, from square.
-const TWIST_DEG: f64 = 15.0;
 
 impl TNut {
     pub fn new(kind: TNutKind, series: u32, size: &str, defaults: &Defaults) -> TNut {
@@ -122,6 +128,8 @@ impl TNut {
             thick: 0.0,
             straight: 0.0,
             thread_at: 0.0,
+            neck: 0.0,
+            neck_w: 0.0,
             custom: false,
             thread: defaults.thread,
         };
@@ -167,6 +175,18 @@ impl TNut {
         self.thick = row.thick;
         self.straight = row.straight;
         self.thread_at = row.thread_at;
+        self.neck = row.neck;
+        self.neck_w = row.neck_w;
+    }
+
+    /// Whether the underside is one arc, a drop-in's that rolls in.
+    fn arc(&self) -> bool {
+        self.row().arc
+    }
+
+    /// The nut's height over the floor, neck and all.
+    fn height(&self) -> f64 {
+        self.thick + self.neck
     }
 
     fn minor(&self) -> f64 {
@@ -189,40 +209,64 @@ impl TNut {
     }
 
     /// The sprung ball: its diameter, how far it stands proud of the
-    /// bottom, and where it sits along the slot.
+    /// bottom, and where it sits along the slot, in from the end away
+    /// from the thread.
     fn ball(&self) -> (f64, f64, f64) {
-        let scale = self.series as f64 / 20.0;
-        let proud = match self.series {
-            30 => 0.5,
-            _ => 0.7,
-        };
-        (3.0 * scale, proud, -(self.length / 2.0 - 4.5 * scale))
+        let row = self.row();
+        let d = if row.ball > 0.0 { row.ball } else { 3.0 };
+        let at = if row.ball_at > 0.0 { row.ball_at } else { 4.5 };
+        (d, (0.3 * d).min(1.0), -(self.length / 2.0 - at))
     }
 
-    /// The section across the slot, in `(x, z)`, counter-clockwise.
+    /// The section across the slot, in `(x, z)`, counter-clockwise: the
+    /// body up from the floor, chamfered or arched in to its bottom, and
+    /// the neck on top.
     pub fn section(&self) -> Vec<[f64; 2]> {
         let (b, w, t, e) = (self.bottom / 2.0, self.top / 2.0, self.thick, self.straight);
-        vec![
-            [-b, 0.0],
-            [b, 0.0],
-            [w, t - e],
-            [w, t],
-            [-w, t],
-            [-w, t - e],
-        ]
+        let h = t - e;
+        let mut pts = vec![[-w, t]];
+        if self.arc() && h > 0.0 {
+            // One circle, centred on the axis, through the top corners
+            // and the ends of the flat on the floor.
+            let c = (w * w - b * b + h * h) / (2.0 * h);
+            let r = (b * b + c * c).sqrt();
+            let mut a1 = (h - c).atan2(-w);
+            if a1 > 0.0 {
+                a1 -= TAU;
+            }
+            let a0 = (-c).atan2(-b);
+            pts.extend(geom::arc_points([0.0, c], r, a1, a0, 10));
+            let right = geom::arc_points([0.0, c], r, -PI - a0, -PI - a1, 10);
+            pts.extend(if b < 1e-9 { &right[1..] } else { &right[..] });
+        } else {
+            pts.extend([[-w, h], [-b, 0.0], [b, 0.0], [w, h]]);
+        }
+        pts.push([w, t]);
+        if self.neck > 0.0 && self.neck_w > 0.0 && self.neck_w < self.top {
+            let n = self.neck_w / 2.0;
+            pts.extend([[n, t], [n, t + self.neck], [-n, t + self.neck], [-n, t]]);
+        } else if self.neck > 0.0 {
+            pts.extend([[w, t + self.neck], [-w, t + self.neck]]);
+        }
+        pts
     }
 
-    /// The plan, in `(x, y)`: a rectangle, or a twist nut's parallelogram
-    /// with its ends cut at 15°.
+    /// The plan, in `(x, y)`, counter-clockwise: a rectangle, or a twist
+    /// nut's with two opposite corners rounded, the ones it turns on.
     pub fn plan(&self) -> Vec<[f64; 2]> {
         let (w, l) = (self.top / 2.0, self.length / 2.0);
-        match self.kind {
-            TNutKind::Twist => {
-                let k = w * TWIST_DEG.to_radians().tan();
-                vec![[-w, -l + k], [w, -l - k], [w, l - k], [-w, l + k]]
-            }
-            _ => vec![[-w, -l], [w, -l], [w, l], [-w, l]],
+        let r = match self.kind {
+            TNutKind::Twist => self.row().round.min(w).min(l),
+            _ => 0.0,
+        };
+        if r <= 0.0 {
+            return vec![[-w, -l], [w, -l], [w, l], [-w, l]];
         }
+        let mut pts = vec![[-w, -l]];
+        pts.extend(geom::arc_points([w - r, -l + r], r, -PI / 2.0, 0.0, 8));
+        pts.push([w, l]);
+        pts.extend(geom::arc_points([-w + r, l - r], r, PI / 2.0, PI, 8));
+        pts
     }
 }
 
@@ -249,10 +293,18 @@ impl Part for TNut {
         if self.bottom <= 0.0 || self.top < self.bottom {
             return Some("The top must be as wide as the bottom or wider.".into());
         }
-        if self.straight <= 0.0 || self.straight >= self.thick {
+        if self.straight < 0.0 || self.straight >= self.thick {
             return Some("The straight part of the sides must lie within the thickness.".into());
         }
-        if self.d >= self.bottom - 0.4 {
+        if self.neck < 0.0 || self.neck_w < 0.0 || (self.neck > 0.0 && self.neck_w > self.top) {
+            return Some("The neck must be no wider than the nut.".into());
+        }
+        if self.neck > 0.0 && self.neck_w > 0.0 && self.neck_w <= self.d + 0.4 {
+            return Some("The thread is wider than the neck.".into());
+        }
+        // An arched underside takes the thread through the arc.
+        let narrowest = if self.arc() { self.top } else { self.bottom };
+        if self.d >= narrowest - 0.4 {
             return Some("The thread is wider than the nut's bottom.".into());
         }
         if self.thread_at > 0.0
@@ -276,16 +328,17 @@ impl Part for TNut {
         } else {
             0.0
         };
-        super::z_axis(-below, self.thick)
+        super::z_axis(-below, self.height())
     }
 
     fn ops(&self) -> Vec<SolidOp> {
         let l = self.length;
         // The section runs along the slot: drawn in XZ and extruded along
         // -Y from y = l / 2, so the nut is centred on the origin; a twist
-        // nut's is cut to its parallelogram.
+        // nut's is cut to its plan, so it runs a little long for the cut
+        // to trim its ends.
         let run = if self.kind == TNutKind::Twist {
-            l + 2.0 * self.top
+            l + 2.0
         } else {
             l
         };
@@ -306,16 +359,16 @@ impl Part for TNut {
                 &self.plan(),
                 Vec::new(),
                 -1.0,
-                self.thick + 2.0,
+                self.height() + 2.0,
                 BooleanOp::Common,
             ));
         }
         // The thread, cut into the plain body before anything else goes on.
-        let thread_c = [0.0, self.thread_y()];
+        let (height, thread_c) = (self.height(), [0.0, self.thread_y()]);
         ops.push(geom::extrude(
-            geom::xy_down(self.thick + 1.0),
+            geom::xy_down(height + 1.0),
             vec![vec![geom::circle_at(thread_c, self.minor())]],
-            self.thick + 2.0,
+            height + 2.0,
             BooleanOp::Cut,
         ));
         if self.thread {
@@ -323,16 +376,16 @@ impl Part for TNut {
                 self.d,
                 self.minor(),
                 self.pitch,
-                self.thick,
-                self.thick,
+                height,
+                height,
                 thread_c,
             ));
         }
         if self.kind == TNutKind::RollIn {
             ops.push(geom::extrude(
-                geom::xy_down(self.thick + 1.0),
+                geom::xy_down(height + 1.0),
                 vec![vec![geom::circle_at([0.0, self.set_screw_y()], 3.3)]],
-                self.thick + 2.0,
+                height + 2.0,
                 BooleanOp::Cut,
             ));
         }
@@ -416,6 +469,15 @@ impl Part for TNut {
             ));
             dims.push(number(
                 ctx,
+                "neck",
+                "Neck height (0: none)",
+                self.neck,
+                0.0,
+                2,
+            ));
+            dims.push(number(ctx, "neck_w", "Neck width", self.neck_w, 0.0, 2));
+            dims.push(number(
+                ctx,
                 "thread_at",
                 "Thread from end (0: middle)",
                 self.thread_at,
@@ -442,6 +504,8 @@ impl Part for TNut {
             length("bottom", "Width on the floor"),
             length("thick", "Thickness"),
             length("straight", "Straight sides"),
+            length("neck", "Neck height"),
+            length("neck_w", "Neck width"),
             length("thread_at", "Thread from end"),
         ]
     }
@@ -476,6 +540,8 @@ impl Part for TNut {
                 "bottom" => self.bottom = *value,
                 "thick" => self.thick = *value,
                 "straight" => self.straight = *value,
+                "neck" => self.neck = *value,
+                "neck_w" => self.neck_w = *value,
                 "thread_at" => self.thread_at = *value,
                 _ => return false,
             },
@@ -526,6 +592,8 @@ impl Part for TNut {
             ("bottom", &mut nut.bottom),
             ("thick", &mut nut.thick),
             ("straight", &mut nut.straight),
+            ("neck", &mut nut.neck),
+            ("neck_w", &mut nut.neck_w),
             ("thread_at", &mut nut.thread_at),
         ] {
             if let Some(v) = arg_f64(args, key) {
@@ -547,6 +615,7 @@ impl TNut {
         let mut s = Sketch::new(ctx.focus);
         let series = standards::extrusion(self.series).unwrap_or(&standards::EXTRUSIONS[0]);
         let (b, w, t, e) = (self.bottom / 2.0, self.top / 2.0, self.thick, self.straight);
+        let (n, nh) = (self.neck_w / 2.0, self.neck);
         let off = Sketch::standoff(self.length.max(self.top));
         // The slot around it: the floor at z = 0, the lips above.
         let floor = (series.cavity - 2.0 * (series.depth - series.shoulder)) / 2.0;
@@ -573,12 +642,20 @@ impl TNut {
         }
         // The nut's section, shaded.
         s.poly(&self.section(), DiagramStroke::Outline, true);
-        s.hidden(&[[-self.d / 2.0, 0.0], [-self.d / 2.0, t]]);
-        s.hidden(&[[self.d / 2.0, 0.0], [self.d / 2.0, t]]);
+        s.hidden(&[[-self.d / 2.0, 0.0], [-self.d / 2.0, t + nh]]);
+        s.hidden(&[[self.d / 2.0, 0.0], [self.d / 2.0, t + nh]]);
         s.width("top", -w, w, t, off * 0.5, fmt(self.top));
-        s.width("bottom", -b, b, 0.0, -off, fmt(self.bottom));
+        if b > 0.0 {
+            s.width("bottom", -b, b, 0.0, -off, fmt(self.bottom));
+        }
         s.height("thick", -reach, 0.0, t, off, format!("T {}", fmt(t)));
-        s.height("straight", reach, t - e, t, -off * 0.6, fmt(e));
+        if e > 0.0 {
+            s.height("straight", reach, t - e, t, -off * 0.6, fmt(e));
+        }
+        if nh > 0.0 {
+            s.height("neck", reach, t, t + nh, -off * 0.6, fmt(nh));
+            s.width("neck_w", -n, n, t + nh, off * 0.5, fmt(self.neck_w));
+        }
         // The plan, beside: the thread, a set screw, a ball.
         let x0 = reach + off * 2.2 + self.top / 2.0;
         let plan: Vec<[f64; 2]> = self.plan().iter().map(|p| [p[0] + x0, p[1]]).collect();
@@ -634,9 +711,14 @@ mod tests {
         let n = nut(TNutKind::Sliding, 20);
         assert_eq!(
             (n.length, n.top, n.bottom, n.thick, n.straight),
-            (10.0, 10.0, 5.8, 4.1, 3.3)
+            (12.0, 11.6, 7.6, 2.8, 1.0)
         );
+        assert_eq!((n.neck, n.neck_w), (1.2, 6.0));
         assert_eq!(n.label(), "M5 sliding T-nut (20 series)");
+        let s = n.section();
+        assert_eq!(s.len(), 10, "a body of six corners and a neck of four");
+        assert!(s.iter().all(|p| p[1] <= 4.0 + 1e-9), "2.8 and a 1.2 neck");
+        assert!(s.iter().any(|p| p[0] == 3.0 && p[1] == 4.0));
         assert_eq!(n.problem(), None);
         let roles: Vec<_> = n.ops().iter().map(|op| op.boolean_op()).collect();
         assert_eq!(roles, [Some(BooleanOp::NewSolid), Some(BooleanOp::Cut)]);
@@ -655,6 +737,8 @@ mod tests {
                     series.cell,
                     kind
                 );
+                assert!(n.neck <= series.lip, "{} {:?}", series.cell, kind);
+                assert!(n.neck == 0.0 || n.neck_w <= series.opening);
                 assert!(!n.ops().is_empty());
                 let ctx = Ctx {
                     feature: "f",
@@ -669,11 +753,16 @@ mod tests {
     }
 
     #[test]
-    fn a_twist_nut_is_a_parallelogram_cut_from_its_section() {
+    fn a_twist_nut_has_two_corners_rounded_and_is_cut_to_its_plan() {
         let n = nut(TNutKind::Twist, 20);
-        assert_eq!((n.top, n.length), (6.0, 10.0));
+        assert_eq!((n.top, n.length, n.neck), (11.5, 5.7, 0.8));
         let plan = n.plan();
-        assert!((plan[1][1] - plan[0][1]).abs() > 1.0, "its ends lean 15°");
+        assert!(plan.len() > 12, "arcs at two corners");
+        let (xs, ys): (Vec<f64>, Vec<f64>) = plan.iter().map(|p| (p[0], p[1])).unzip();
+        let max = |v: &[f64]| v.iter().cloned().fold(f64::MIN, f64::max);
+        assert!((max(&xs) - 5.75).abs() < 1e-9 && (max(&ys) - 2.85).abs() < 1e-9);
+        assert!(plan.contains(&[-5.75, -2.85]) && plan.contains(&[5.75, 2.85]));
+        assert!(!plan.contains(&[5.75, -2.85]) && !plan.contains(&[-5.75, 2.85]));
         let roles: Vec<_> = n.ops().iter().map(|op| op.boolean_op()).collect();
         assert_eq!(
             roles,
@@ -692,23 +781,50 @@ mod tests {
         assert!((n.thread_y() - 2.0).abs() < 1e-9, "6.5 from one end of 17");
         let n = nut(TNutKind::SpringBall, 30);
         assert!(matches!(n.ops().last(), Some(SolidOp::Primitive { .. })));
+        let (d, proud, y) = n.ball();
+        assert_eq!((d, proud), (3.5, 1.0));
+        assert!((y - -5.8).abs() < 1e-9, "5.2 in from the end of 22");
+        assert!((n.thread_y() - 4.0).abs() < 1e-9, "7 in from the other");
+    }
+
+    #[test]
+    fn a_drop_in_rolls_on_an_arc_underside() {
+        let n = nut(TNutKind::DropIn, 30);
+        assert!(n.arc());
+        let s = n.section();
+        assert!(s.len() > 20);
+        let lowest = s.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+        assert!(lowest.abs() < 1e-9);
+        // The flat on the floor is 4.3 wide; the arc reaches the top corners.
+        assert!(
+            s.iter()
+                .any(|p| (p[0] - 2.15).abs() < 1e-9 && p[1].abs() < 1e-9)
+        );
+        assert!(
+            s.iter()
+                .any(|p| (p[0] - 6.5).abs() < 1e-9 && (p[1] - 5.9).abs() < 1e-9)
+        );
+        assert_eq!(n.problem(), None);
+        let flat = nut(TNutKind::DropIn, 20);
+        assert!(!flat.arc());
+        assert_eq!(flat.section().len(), 6);
     }
 
     #[test]
     fn sizes_follow_the_series_and_a_command_names_its_nut() {
         let mut n = nut(TNutKind::Sliding, 20);
-        assert_eq!(n.sizes(), ["M3", "M4", "M5"]);
+        assert_eq!(n.sizes(), ["M3", "M4", "M5", "M6"]);
         assert!(n.apply(&PanelEvent::Choice {
             id: "series".into(),
             index: 2,
         }));
-        assert_eq!((n.series, n.size.as_str(), n.top), (40, "M5", 17.0));
+        assert_eq!((n.series, n.size.as_str(), n.top), (40, "M5", 19.5));
         let n = TNut::with_args(
             &json!({"kind": "spring_ball", "series": 30, "size": "M6"}),
             &Defaults::default(),
         )
         .unwrap();
-        assert_eq!((n.kind, n.length, n.d), (TNutKind::SpringBall, 17.0, 6.0));
+        assert_eq!((n.kind, n.length, n.d), (TNutKind::SpringBall, 22.0, 6.0));
         assert!(
             TNut::with_args(
                 &json!({"kind": "twist", "series": 20, "size": "M6"}),

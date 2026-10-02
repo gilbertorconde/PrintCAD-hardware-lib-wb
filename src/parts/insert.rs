@@ -217,7 +217,10 @@ impl Part for Insert {
         let mut widgets = vec![
             self.drawing(ctx),
             choice("size", "Thread", &sizes, index_of(&sizes, &self.size)),
-            choice(
+        ];
+        // A size made short as well offers the choice.
+        if row.short < row.length {
+            widgets.push(choice(
                 "short",
                 "Length",
                 &[
@@ -225,13 +228,13 @@ impl Part for Insert {
                     format!("Short ({})", fmt(row.short)),
                 ],
                 usize::from(self.short),
-            ),
-            text(format!(
-                "Drive it into a Ø{} hole, {} deep or more.",
-                fmt(self.hole),
-                fmt(self.length + 0.5)
-            )),
-        ];
+            ));
+        }
+        widgets.push(text(format!(
+            "Drive it into a Ø{} hole, {} deep or more.",
+            fmt(self.hole),
+            fmt(self.length + 1.0)
+        )));
         let mut dims = vec![toggle("custom", "Custom dimensions", self.custom)];
         if self.custom {
             dims.push(number(ctx, "d", "Thread diameter", self.d, 0.1, 2));
@@ -429,7 +432,7 @@ mod tests {
         let insert = Insert::new("M3", &Defaults::default());
         assert_eq!(
             (insert.outer, insert.pilot, insert.length, insert.hole),
-            (4.6, 4.0, 5.7, 4.0)
+            (4.6, 3.9, 5.7, 4.0)
         );
         assert_eq!(insert.label(), "M3 insert");
         assert_eq!(insert.ops().len(), 3, "the core and two knurls");
@@ -442,7 +445,7 @@ mod tests {
             id: "short".into(),
             index: 1,
         }));
-        assert_eq!(insert.length, 4.7);
+        assert_eq!(insert.length, 4.0);
         let insert = Insert::with_args(
             &json!({"size": "M5", "short": true, "thread": true}),
             &Defaults::default(),
@@ -460,6 +463,21 @@ mod tests {
             ],
             "the thread is cut before the knurls go on"
         );
-        assert!(Insert::with_args(&json!({"size": "M8"}), &Defaults::default()).is_err());
+        assert!(Insert::with_args(&json!({"size": "M10"}), &Defaults::default()).is_err());
+        // M8 is made in one length, so no choice is offered.
+        let m8 = Insert::new("M8", &Defaults::default());
+        assert_eq!(
+            (m8.outer, m8.pilot, m8.length, m8.hole),
+            (10.2, 9.5, 12.7, 9.6)
+        );
+        let ctx = Ctx {
+            feature: "f",
+            focus: None,
+        };
+        assert!(
+            !m8.panel(&ctx)
+                .iter()
+                .any(|w| matches!(w, Widget::Choice { id, .. } if id == "short"))
+        );
     }
 }

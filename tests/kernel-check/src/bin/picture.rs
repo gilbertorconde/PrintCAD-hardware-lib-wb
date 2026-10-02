@@ -65,6 +65,18 @@ fn main() {
             "tnut-rollin-30",
             Hardware::TNut(TNut::new(TNutKind::RollIn, 30, "M5", &d)),
         ),
+        (
+            "tnut-sliding-30",
+            Hardware::TNut(TNut::new(TNutKind::Sliding, 30, "M5", &d)),
+        ),
+        (
+            "tnut-spring-30",
+            Hardware::TNut(TNut::new(TNutKind::SpringBall, 30, "M5", &d)),
+        ),
+        (
+            "tnut-twist-40",
+            Hardware::TNut(TNut::new(TNutKind::Twist, 40, "M6", &d)),
+        ),
     ];
     let mut kernel = kernel_ogeom::OgeomKernel::new();
     let detail = TessellationSettings::default();

@@ -361,10 +361,13 @@ pub const DIN_557: NutTable = NutTable {
     ],
 };
 
-/// A T-slot nut as the extrusion maker draws it (Misumi 5, 6 and 8
-/// series). Its section across the slot is a trapezoid: `top` wide under
-/// the lips, straight down `straight`, then in to `bottom` wide on the
-/// cavity's floor at `thick` deep. `length` runs along the slot.
+/// A T-slot nut as its maker draws it. Its section across the slot is
+/// `top` wide under the lips, straight down `straight`, then in to
+/// `bottom` wide on the cavity's floor at `thick` deep: by chamfers, or
+/// by one arc when `arc` (a drop-in that rolls into the slot). A `neck`
+/// stands that high above the body, `neck_w` wide, in the slot's opening.
+/// `length` runs along the slot; a twist nut's is its narrow side, as it
+/// sits locked, and `round` is the radius of the two corners it turns on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TNutRow {
     pub series: u32,
@@ -374,8 +377,16 @@ pub struct TNutRow {
     pub bottom: f64,
     pub thick: f64,
     pub straight: f64,
+    pub neck: f64,
+    pub neck_w: f64,
+    pub arc: bool,
+    pub round: f64,
     /// Where the thread sits from one end along the slot; 0 for the middle.
     pub thread_at: f64,
+    /// A spring nut's ball: its diameter, and where it sits from the other
+    /// end.
+    pub ball: f64,
+    pub ball_at: f64,
     /// The thread sizes made for it.
     pub sizes: &'static [&'static str],
 }
@@ -390,101 +401,227 @@ pub enum TNutKind {
     DropIn,
     /// A drop-in with a sprung ball under it, so it stays where it is put.
     SpringBall,
-    /// Narrow enough to drop straight in, its ends cut at 15°; the screw's
-    /// torque turns it to lock under the lips.
+    /// Narrow enough to drop straight in; the screw's torque turns it a
+    /// quarter turn on its two rounded corners to lock under the lips.
     Twist,
     /// A drop-in with a second, set-screw hole to lock it in place.
     RollIn,
 }
 
-#[allow(clippy::too_many_arguments)]
-const fn tnut(
-    series: u32,
-    kind: TNutKind,
-    length: f64,
-    top: f64,
-    bottom: f64,
-    thick: f64,
-    straight: f64,
-    thread_at: f64,
-    sizes: &'static [&'static str],
-) -> TNutRow {
-    TNutRow {
-        series,
-        kind,
-        length,
-        top,
-        bottom,
-        thick,
-        straight,
-        thread_at,
-        sizes,
-    }
-}
+const NONE: TNutRow = TNutRow {
+    series: 0,
+    kind: TNutKind::Sliding,
+    length: 0.0,
+    top: 0.0,
+    bottom: 0.0,
+    thick: 0.0,
+    straight: 0.0,
+    neck: 0.0,
+    neck_w: 0.0,
+    arc: false,
+    round: 0.0,
+    thread_at: 0.0,
+    ball: 0.0,
+    ball_at: 0.0,
+    sizes: &[],
+};
 
 const M3_5: &[&str] = &["M3", "M4", "M5"];
 const M3_6: &[&str] = &["M3", "M4", "M5", "M6"];
+const M3_8: &[&str] = &["M3", "M4", "M5", "M6", "M8"];
 const M4_8: &[&str] = &["M4", "M5", "M6", "M8"];
 
-/// Misumi HNTT, HNTA, HNTP, HNTF and HNTR, by series. The 40 series'
-/// sliding and twist nuts are catalogued 9 thick against a cavity drawn
-/// 7 high; they are drawn to fit the cavity.
+/// Framing Technology's drop-in nut with a ball detent for the 8 mm slot
+/// (DTNB32): an arc underside, a 0.9 neck, the thread 7 from one end and
+/// the ball 5.2 from the other. Its plain and set-screw drop-ins (DTNR32,
+/// DTNS32) share the body.
+const DTNB32: TNutRow = TNutRow {
+    series: 30,
+    kind: TNutKind::DropIn,
+    length: 22.0,
+    top: 13.0,
+    bottom: 4.3,
+    thick: 6.2,
+    straight: 0.3,
+    neck: 0.9,
+    neck_w: 8.0,
+    arc: true,
+    thread_at: 7.0,
+    ball_at: 5.2,
+    sizes: M3_8,
+    ..NONE
+};
+
+/// The nuts by series: the sliding and twist nuts of all three and the
+/// 30 series drop-ins are Framing Technology's (TSN06/08/10, TN06/08/10,
+/// DTNB32), from their drawings and models; the 20 and 40 series drop-ins
+/// are Misumi's (HNTA, HNTP, HNTR), from the catalogue drawings.
 pub const T_NUTS: [TNutRow; 15] = [
-    tnut(20, TNutKind::Sliding, 10.0, 10.0, 5.8, 4.1, 3.3, 0.0, M3_5),
-    tnut(20, TNutKind::DropIn, 15.0, 8.0, 5.8, 3.2, 2.5, 0.0, M3_5),
-    tnut(
-        20,
-        TNutKind::SpringBall,
-        17.0,
-        8.3,
-        5.8,
-        3.2,
-        2.5,
-        6.0,
-        M3_5,
-    ),
-    tnut(
-        20,
-        TNutKind::Twist,
-        10.0,
-        6.0,
-        5.8,
-        4.1,
-        3.3,
-        0.0,
-        &["M3", "M4"],
-    ),
-    tnut(20, TNutKind::RollIn, 17.0, 8.0, 5.8, 3.2, 2.4, 6.5, M3_5),
-    tnut(30, TNutKind::Sliding, 14.0, 15.0, 7.8, 6.3, 5.5, 0.0, M3_6),
-    tnut(30, TNutKind::DropIn, 17.0, 11.5, 7.8, 6.3, 5.5, 0.0, M3_6),
-    tnut(
-        30,
-        TNutKind::SpringBall,
-        17.0,
-        11.5,
-        7.8,
-        6.3,
-        5.5,
-        6.0,
-        M3_6,
-    ),
-    tnut(30, TNutKind::Twist, 15.0, 8.0, 7.8, 6.3, 5.5, 0.0, M3_6),
-    tnut(30, TNutKind::RollIn, 17.0, 11.5, 7.8, 6.3, 5.5, 6.5, M3_6),
-    tnut(40, TNutKind::Sliding, 17.0, 17.0, 9.8, 7.0, 5.0, 0.0, M4_8),
-    tnut(40, TNutKind::DropIn, 20.0, 14.5, 9.8, 6.5, 4.5, 0.0, M4_8),
-    tnut(
-        40,
-        TNutKind::SpringBall,
-        20.0,
-        14.5,
-        9.8,
-        6.5,
-        4.5,
-        8.0,
-        M4_8,
-    ),
-    tnut(40, TNutKind::Twist, 17.0, 10.0, 9.8, 7.0, 5.0, 0.0, M4_8),
-    tnut(40, TNutKind::RollIn, 20.0, 14.5, 9.8, 6.5, 4.5, 6.5, M4_8),
+    TNutRow {
+        series: 20,
+        kind: TNutKind::Sliding,
+        length: 12.0,
+        top: 11.6,
+        bottom: 7.6,
+        thick: 2.8,
+        straight: 1.0,
+        neck: 1.2,
+        neck_w: 6.0,
+        sizes: M3_6,
+        ..NONE
+    },
+    TNutRow {
+        series: 20,
+        kind: TNutKind::DropIn,
+        length: 15.0,
+        top: 8.0,
+        bottom: 5.8,
+        thick: 3.2,
+        straight: 2.5,
+        sizes: M3_5,
+        ..NONE
+    },
+    TNutRow {
+        series: 20,
+        kind: TNutKind::SpringBall,
+        length: 17.0,
+        top: 8.3,
+        bottom: 5.8,
+        thick: 3.2,
+        straight: 2.5,
+        thread_at: 6.0,
+        ball: 3.0,
+        ball_at: 4.5,
+        sizes: M3_5,
+        ..NONE
+    },
+    TNutRow {
+        series: 20,
+        kind: TNutKind::Twist,
+        length: 5.7,
+        top: 11.5,
+        bottom: 6.8,
+        thick: 3.2,
+        straight: 1.5,
+        neck: 0.8,
+        neck_w: 5.7,
+        round: 3.0,
+        sizes: M3_5,
+        ..NONE
+    },
+    TNutRow {
+        series: 20,
+        kind: TNutKind::RollIn,
+        length: 17.0,
+        top: 8.0,
+        bottom: 5.8,
+        thick: 3.2,
+        straight: 2.4,
+        thread_at: 6.5,
+        sizes: M3_5,
+        ..NONE
+    },
+    TNutRow {
+        series: 30,
+        kind: TNutKind::Sliding,
+        length: 16.0,
+        top: 16.0,
+        bottom: 10.6,
+        thick: 4.3,
+        straight: 1.7,
+        neck: 1.7,
+        neck_w: 8.0,
+        sizes: M4_8,
+        ..NONE
+    },
+    DTNB32,
+    TNutRow {
+        kind: TNutKind::SpringBall,
+        ball: 3.5,
+        ..DTNB32
+    },
+    TNutRow {
+        series: 30,
+        kind: TNutKind::Twist,
+        length: 7.7,
+        top: 16.0,
+        bottom: 10.8,
+        thick: 4.5,
+        straight: 2.2,
+        neck: 1.5,
+        neck_w: 7.7,
+        round: 4.1,
+        sizes: M3_6,
+        ..NONE
+    },
+    TNutRow {
+        kind: TNutKind::RollIn,
+        ..DTNB32
+    },
+    TNutRow {
+        series: 40,
+        kind: TNutKind::Sliding,
+        length: 20.0,
+        top: 19.5,
+        bottom: 12.5,
+        thick: 5.5,
+        straight: 1.7,
+        neck: 5.0,
+        neck_w: 9.8,
+        sizes: M4_8,
+        ..NONE
+    },
+    TNutRow {
+        series: 40,
+        kind: TNutKind::DropIn,
+        length: 20.0,
+        top: 14.5,
+        bottom: 9.8,
+        thick: 6.5,
+        straight: 4.5,
+        sizes: M4_8,
+        ..NONE
+    },
+    TNutRow {
+        series: 40,
+        kind: TNutKind::SpringBall,
+        length: 20.0,
+        top: 14.5,
+        bottom: 9.8,
+        thick: 6.5,
+        straight: 4.5,
+        thread_at: 8.0,
+        ball: 5.0,
+        ball_at: 9.0,
+        sizes: M4_8,
+        ..NONE
+    },
+    TNutRow {
+        series: 40,
+        kind: TNutKind::Twist,
+        length: 9.7,
+        top: 19.0,
+        bottom: 12.0,
+        thick: 5.8,
+        straight: 2.4,
+        neck: 3.0,
+        neck_w: 9.7,
+        round: 4.1,
+        sizes: M4_8,
+        ..NONE
+    },
+    TNutRow {
+        series: 40,
+        kind: TNutKind::RollIn,
+        length: 20.0,
+        top: 14.5,
+        bottom: 9.8,
+        thick: 6.5,
+        straight: 4.5,
+        thread_at: 6.5,
+        sizes: M4_8,
+        ..NONE
+    },
 ];
 
 pub fn tnut_row(series: u32, kind: TNutKind) -> Option<&'static TNutRow> {
@@ -699,10 +836,11 @@ pub fn series_floor(s: &ExtrusionSeries) -> f64 {
     }
 }
 
-/// A heat-set threaded insert for printed parts, as the common brass
-/// ones are made (CNC Kitchen, Ruthex): a pilot end that finds the hole,
-/// two knurled bands, the upper the wider, and the hole to drive it into,
-/// which the pilot fits.
+/// A heat-set threaded insert for printed parts, as CNC Kitchen's brass
+/// ones are made and their dimension table gives them: a pilot end that
+/// finds the hole, two knurled bands, the upper the wider, and the hole
+/// to drive it into, a tenth over the pilot. A size with no short length
+/// has `short` equal to `length`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InsertRow {
     pub size: &'static str,
@@ -734,17 +872,18 @@ const fn insert(
         pilot,
         length,
         short,
-        hole: pilot,
+        hole: pilot + 0.1,
     }
 }
 
-pub const INSERTS: [InsertRow; 6] = [
-    insert("M2", 2.0, 0.4, 3.5, 3.2, 4.0, 3.0),
-    insert("M2.5", 2.5, 0.45, 4.0, 3.6, 5.7, 4.0),
-    insert("M3", 3.0, 0.5, 4.6, 4.0, 5.7, 4.0),
-    insert("M4", 4.0, 0.7, 6.0, 5.6, 8.1, 4.7),
-    insert("M5", 5.0, 0.8, 7.1, 6.4, 9.5, 5.8),
-    insert("M6", 6.0, 1.0, 8.4, 8.0, 12.7, 8.0),
+pub const INSERTS: [InsertRow; 7] = [
+    insert("M2", 2.0, 0.4, 3.6, 3.1, 4.0, 3.0),
+    insert("M2.5", 2.5, 0.45, 4.6, 3.9, 5.7, 4.0),
+    insert("M3", 3.0, 0.5, 4.6, 3.9, 5.7, 3.0),
+    insert("M4", 4.0, 0.7, 6.3, 5.5, 8.1, 4.0),
+    insert("M5", 5.0, 0.8, 7.1, 6.3, 9.5, 5.8),
+    insert("M6", 6.0, 1.0, 8.7, 7.9, 12.7, 12.7),
+    insert("M8", 8.0, 1.25, 10.2, 9.5, 12.7, 12.7),
 ];
 
 /// A rolling bearing by its designation: bore, outside and width.
@@ -926,15 +1065,22 @@ mod tests {
                 .iter()
                 .filter(|n| series.floor == 0.0 && n.series == series.cell)
             {
-                assert!(nut.bottom <= floor + 0.01, "{} {:?}", series.cell, nut.kind);
-                assert!(nut.top < series.cavity, "{} {:?}", series.cell, nut.kind);
+                let at = format!("{} {:?}", series.cell, nut.kind);
+                assert!(nut.bottom < nut.top && nut.top < series.cavity, "{at}");
+                assert!(nut.thick <= series.depth - series.lip + 0.11, "{at}");
+                assert!(nut.straight < nut.thick, "{at}");
+                // A neck stands in the opening, no higher than the lips.
+                assert!(nut.neck <= series.lip + 0.01, "{at}");
                 assert!(
-                    nut.thick <= series.depth - series.lip + 0.11,
-                    "{} {:?}",
-                    series.cell,
-                    nut.kind
+                    nut.neck == 0.0 || nut.neck_w <= series.opening + 0.01,
+                    "{at}"
                 );
-                assert!(nut.straight < nut.thick, "{} {:?}", series.cell, nut.kind);
+                assert!((nut.kind == TNutKind::Twist) == (nut.round > 0.0), "{at}");
+                assert!(
+                    (nut.kind == TNutKind::SpringBall) == (nut.ball > 0.0),
+                    "{at}"
+                );
+                assert!(!nut.sizes.is_empty(), "{at}");
             }
         }
         for row in INSERTS {

@@ -330,7 +330,7 @@ fn id(suffix: &str) -> String {
 
 /// Every numeric field of every family that is a length, for the
 /// property panel to show in the document's unit.
-const LENGTH_KEYS: [&str; 35] = [
+const LENGTH_KEYS: [&str; 37] = [
     "length",
     "d",
     "pitch",
@@ -366,6 +366,8 @@ const LENGTH_KEYS: [&str; 35] = [
     "straight",
     "thread_at",
     "floor",
+    "neck",
+    "neck_w",
 ];
 
 #[derive(Default)]
