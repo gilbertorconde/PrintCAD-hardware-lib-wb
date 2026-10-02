@@ -72,7 +72,10 @@ The kernel check is a crate of its own that compiles the parts' modules
 in beside the native kernel, since the package itself only links as a
 component; it prints each part's volume and build time. Its `picture`
 binary (`cargo run --release --bin picture`) draws a few parts as the
-kernel builds them to `/tmp/hardware-<part>.svg`, to look at.
+kernel builds them to `/tmp/hardware-<part>.svg`, to look at. Its
+`overlap` binary builds every boolean step of every part on its own and
+intersects each pair, listing the features that share volume: a hole cut
+through a ball shows up there before it shows up in a picture.
 
 The SDK comes from the printCAD repository (`sdk/printcad-bench-sdk` on
 master). To build against a local printCAD, point the dependency in

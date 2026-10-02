@@ -23,7 +23,9 @@ pub fn xy(z: f64) -> ProfilePlane {
     }
 }
 
-/// The XY plane at `z`, extruding down.
+/// The XY plane at `z`, extruding down. Its y runs to the world's -Y (a
+/// right-handed frame about -Z), so a shape drawn in it is mirrored
+/// across X: for shapes centred on the axis only, never to place a hole.
 pub fn xy_down(z: f64) -> ProfilePlane {
     ProfilePlane {
         origin: [0.0, 0.0, z],

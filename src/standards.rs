@@ -592,7 +592,7 @@ pub const T_NUTS: [TNutRow; 15] = [
         straight: 4.5,
         thread_at: 8.0,
         ball: 5.0,
-        ball_at: 9.0,
+        ball_at: 5.0,
         sizes: M4_8,
         ..NONE
     },

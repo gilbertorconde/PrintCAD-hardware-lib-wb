@@ -365,8 +365,10 @@ impl Part for TNut {
         }
         // The thread, cut into the plain body before anything else goes on.
         let (height, thread_c) = (self.height(), [0.0, self.thread_y()]);
+        // Holes are drawn in the plan's own plane, so a centre's y is the
+        // world's y, and cut up from below the floor.
         ops.push(geom::extrude(
-            geom::xy_down(height + 1.0),
+            geom::xy(-1.0),
             vec![vec![geom::circle_at(thread_c, self.minor())]],
             height + 2.0,
             BooleanOp::Cut,
@@ -383,7 +385,7 @@ impl Part for TNut {
         }
         if self.kind == TNutKind::RollIn {
             ops.push(geom::extrude(
-                geom::xy_down(height + 1.0),
+                geom::xy(-1.0),
                 vec![vec![geom::circle_at([0.0, self.set_screw_y()], 3.3)]],
                 height + 2.0,
                 BooleanOp::Cut,
@@ -700,6 +702,7 @@ impl TNut {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use printcad_bench_sdk::api::kernel_api::ProfileSegment;
     use printcad_bench_sdk::json;
 
     fn nut(kind: TNutKind, series: u32) -> TNut {
@@ -785,6 +788,48 @@ mod tests {
         assert_eq!((d, proud), (3.5, 1.0));
         assert!((y - -5.8).abs() < 1e-9, "5.2 in from the end of 22");
         assert!((n.thread_y() - 4.0).abs() < 1e-9, "7 in from the other");
+    }
+
+    #[test]
+    fn the_holes_sit_where_the_drawing_puts_them() {
+        // The thread toward +Y, the set screw toward -Y, in the world's
+        // frame: a plane with its y the other way would swap them and put
+        // a spring nut's ball into its bore.
+        let n = nut(TNutKind::RollIn, 30);
+        let centres: Vec<[f64; 2]> = n.ops()[1..]
+            .iter()
+            .filter_map(|op| match op {
+                SolidOp::Sweep { profile, .. } => {
+                    assert_eq!(profile.plane.y_axis, [0.0, 1.0, 0.0]);
+                    match profile.wires[0].segments[0] {
+                        ProfileSegment::Circle { center, .. } => Some(center),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(centres, [[0.0, 4.0], [0.0, -7.5]]);
+    }
+
+    #[test]
+    fn every_spring_nuts_ball_is_clear_of_its_thread() {
+        for series in standards::EXTRUSIONS {
+            let n = TNut::new(
+                TNutKind::SpringBall,
+                series.cell,
+                "M6",
+                &Defaults::default(),
+            );
+            let (d, _, y) = n.ball();
+            let gap = (n.thread_y() - y).abs() - d / 2.0 - n.d / 2.0;
+            assert!(
+                gap > 0.5,
+                "{}: the ball is {gap} from the thread",
+                series.cell
+            );
+            assert!(y + d / 2.0 < n.length / 2.0 && y - d / 2.0 > -n.length / 2.0);
+        }
     }
 
     #[test]
