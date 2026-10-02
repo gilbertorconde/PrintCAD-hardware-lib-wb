@@ -1,9 +1,11 @@
-//! T-slot aluminium extrusions: a block of square cells of one series
-//! (20, 30 or 40 mm), a slot on every outer face of every cell and a
-//! hole down each cell, run along X, Y or Z from the origin.
+//! T-slot aluminium extrusions, as Misumi draws its 5, 6 and 8 series: a
+//! block of square cells of one series (20, 30 or 40 mm), a slot on every
+//! open outer face of every cell, a hole down each cell, hollows between
+//! the cells of a multi-cell profile, and the corner holes or hollows a
+//! series has. It runs along X, Y or Z from the origin.
 
 use printcad_bench_sdk::Value;
-use printcad_bench_sdk::api::kernel_api::{BooleanOp, ProfilePlane, SolidOp};
+use printcad_bench_sdk::api::kernel_api::{BooleanOp, ProfilePlane, ProfileSegment, SolidOp};
 use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +19,66 @@ use crate::standards::{self, ExtrusionSeries};
 
 pub const AXES: [&str; 3] = ["X", "Y", "Z"];
 
+/// Which outer faces carry a slot: every one, or the maker's closed-face
+/// variants. A closed face is flat outside and keeps its cavity inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Slots {
+    #[default]
+    All,
+    /// One face flat (the top).
+    Three,
+    /// Two neighbouring faces flat (top and left).
+    Adjacent,
+    /// Two facing faces flat (top and bottom).
+    Opposite,
+    /// One slot (the bottom); three faces flat.
+    One,
+}
+
+impl Slots {
+    pub const ALL: [Slots; 5] = [
+        Slots::All,
+        Slots::Three,
+        Slots::Adjacent,
+        Slots::Opposite,
+        Slots::One,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Slots::All => "All faces",
+            Slots::Three => "Three (top flat)",
+            Slots::Adjacent => "Two adjacent (top and left flat)",
+            Slots::Opposite => "Two opposite (top and bottom flat)",
+            Slots::One => "One (bottom)",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<Slots> {
+        let key = name.to_lowercase();
+        Slots::ALL.into_iter().find(|s| {
+            s.name().to_lowercase().starts_with(&key)
+                || format!("{s:?}").eq_ignore_ascii_case(name)
+                || (key == "4" && *s == Slots::All)
+                || (key == "3" && *s == Slots::Three)
+                || (key == "1" && *s == Slots::One)
+        })
+    }
+
+    /// Whether side `side` is open: 0 the bottom, 1 the right, 2 the
+    /// top, 3 the left.
+    pub fn open(self, side: usize) -> bool {
+        match self {
+            Slots::All => true,
+            Slots::Three => side != 2,
+            Slots::Adjacent => side == 0 || side == 1,
+            Slots::Opposite => side == 0 || side == 2,
+            Slots::One => side == 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Extrusion {
     /// The cell size: 20, 30 or 40.
@@ -29,11 +91,12 @@ pub struct Extrusion {
     /// The slot's lips are cut back at 45°, for wheels to ride on.
     #[serde(default)]
     pub v_slot: bool,
+    #[serde(default)]
+    pub slots: Slots,
     pub opening: f64,
     pub lip: f64,
     pub cavity: f64,
-    /// Where the cavity's walls turn in at 45° toward the floor; 0 in a
-    /// part saved before it was drawn, read as midway down.
+    /// Where the cavity's walls turn in at 45° toward the floor.
     #[serde(default)]
     pub shoulder: f64,
     pub depth: f64,
@@ -41,6 +104,19 @@ pub struct Extrusion {
     pub corner: f64,
     #[serde(default)]
     pub custom: bool,
+}
+
+/// A side of the section: the corner it leaves, the way it runs, its
+/// outward normal and how many cells it passes.
+type Side = ([f64; 2], [f64; 2], [f64; 2], u32);
+
+/// The section as it is cut: the outline, the round holes `(centre,
+/// diameter)` and the hollows, each a closed polygon.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Section {
+    pub outline: Vec<[f64; 2]>,
+    pub circles: Vec<([f64; 2], f64)>,
+    pub hollows: Vec<Vec<[f64; 2]>>,
 }
 
 impl Extrusion {
@@ -52,6 +128,7 @@ impl Extrusion {
             length,
             along: "Z".into(),
             v_slot: false,
+            slots: Slots::All,
             opening: 0.0,
             lip: 0.0,
             cavity: 0.0,
@@ -65,7 +142,7 @@ impl Extrusion {
         e
     }
 
-    fn table(&self) -> &'static ExtrusionSeries {
+    pub fn table(&self) -> &'static ExtrusionSeries {
         standards::extrusion(self.series).unwrap_or(&standards::EXTRUSIONS[0])
     }
 
@@ -79,6 +156,18 @@ impl Extrusion {
         self.depth = t.depth;
         self.hole = t.hole;
         self.corner = t.corner;
+    }
+
+    fn cell(&self) -> f64 {
+        self.series as f64
+    }
+
+    pub fn width(&self) -> f64 {
+        self.cells_x as f64 * self.cell()
+    }
+
+    pub fn height(&self) -> f64 {
+        self.cells_y as f64 * self.cell()
     }
 
     /// The shoulder's depth, midway down the cavity when none was saved.
@@ -95,76 +184,86 @@ impl Extrusion {
         self.cavity - 2.0 * (self.depth - self.shoulder())
     }
 
-    fn cell(&self) -> f64 {
-        self.series as f64
+    /// The core a cell keeps between its cavity floors.
+    fn core(&self) -> f64 {
+        self.cell() - 2.0 * self.depth
     }
 
-    pub fn width(&self) -> f64 {
-        self.cells_x as f64 * self.cell()
+    /// The centre of cell `(i, j)`.
+    fn centre(&self, i: u32, j: u32) -> [f64; 2] {
+        let c = self.cell();
+        [
+            -self.width() / 2.0 + c * (i as f64 + 0.5),
+            -self.height() / 2.0 + c * (j as f64 + 0.5),
+        ]
     }
 
-    pub fn height(&self) -> f64 {
-        self.cells_y as f64 * self.cell()
-    }
-
-    /// The section's outline about the origin, counter-clockwise, with a
-    /// slot on every outer cell face, and the centre of every hole.
-    pub fn outline(&self) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
-        let (w, h, c) = (self.width() / 2.0, self.height() / 2.0, self.cell());
-        let r = self.corner.min(c / 4.0);
-        // The four sides, counter-clockwise from the bottom-left corner:
-        // the corner it leaves, the way it runs, its outward normal and
-        // how many cells it passes.
-        type Side = ([f64; 2], [f64; 2], [f64; 2], u32);
-        let sides: [Side; 4] = [
+    /// The four sides, counter-clockwise from the bottom-left corner:
+    /// the corner each leaves, the way it runs, its outward normal and
+    /// how many cells it passes.
+    fn sides(&self) -> [Side; 4] {
+        let (w, h) = (self.width() / 2.0, self.height() / 2.0);
+        [
             ([-w, -h], [1.0, 0.0], [0.0, -1.0], self.cells_x),
             ([w, -h], [0.0, 1.0], [1.0, 0.0], self.cells_y),
             ([w, h], [-1.0, 0.0], [0.0, 1.0], self.cells_x),
             ([-w, h], [0.0, -1.0], [-1.0, 0.0], self.cells_y),
-        ];
+        ]
+    }
+
+    /// The section, every loop counter-clockwise.
+    pub fn section(&self) -> Section {
         let add = |a: [f64; 2], b: [f64; 2], k: f64| [a[0] + b[0] * k, a[1] + b[1] * k];
-        let mut points = Vec::new();
-        for (i, (corner, t, n, cells)) in sides.iter().enumerate() {
+        let (c, t) = (self.cell(), *self.table());
+        let r = self.corner.min(c / 4.0);
+        let (o, lip, cav, shoulder, depth, floor) = (
+            self.opening / 2.0,
+            self.lip,
+            self.cavity / 2.0,
+            self.shoulder(),
+            self.depth,
+            self.floor() / 2.0,
+        );
+        let sides = self.sides();
+        let mut section = Section::default();
+        for (i, (corner, tan, nrm, cells)) in sides.iter().enumerate() {
             let next = sides[(i + 1) % 4].0;
-            points.push(add(*corner, *t, r));
+            let open = self.slots.open(i);
+            section.outline.push(add(*corner, *tan, r));
             for cell in 0..*cells {
-                let centre = add(*corner, *t, c * (cell as f64 + 0.5));
-                let (o, lip, cav, shoulder, depth, floor) = (
-                    self.opening / 2.0,
-                    self.lip,
-                    self.cavity / 2.0,
-                    self.shoulder(),
-                    self.depth,
-                    self.floor() / 2.0,
-                );
-                let lipped = |side: f64, deep: f64| add(add(centre, *t, side), *n, -deep);
-                if self.v_slot {
-                    points.push(lipped(-(o + lip), 0.0));
+                let centre = add(*corner, *tan, c * (cell as f64 + 0.5));
+                let at = |side: f64, deep: f64| add(add(centre, *tan, side), *nrm, -deep);
+                // The cavity, from its lip down: at its widest to the
+                // shoulder, then in at 45° to the floor.
+                let cavity = [
+                    at(-cav, lip),
+                    at(-cav, shoulder),
+                    at(-floor, depth),
+                    at(floor, depth),
+                    at(cav, shoulder),
+                    at(cav, lip),
+                ];
+                if open {
+                    let (lead_in, lead_out) = if self.v_slot {
+                        (at(-(o + lip), 0.0), at(o + lip, 0.0))
+                    } else {
+                        (at(-o, 0.0), at(o, 0.0))
+                    };
+                    section.outline.push(lead_in);
+                    section.outline.push(at(-o, lip));
+                    section.outline.extend(cavity);
+                    section.outline.push(at(o, lip));
+                    section.outline.push(lead_out);
                 } else {
-                    points.push(lipped(-o, 0.0));
-                }
-                // Under the lip the cavity is at its widest down to the
-                // shoulder, then its walls run in at 45° to the floor.
-                points.push(lipped(-o, lip));
-                points.push(lipped(-cav, lip));
-                points.push(lipped(-cav, shoulder));
-                points.push(lipped(-floor, depth));
-                points.push(lipped(floor, depth));
-                points.push(lipped(cav, shoulder));
-                points.push(lipped(cav, lip));
-                points.push(lipped(o, lip));
-                if self.v_slot {
-                    points.push(lipped(o + lip, 0.0));
-                } else {
-                    points.push(lipped(o, 0.0));
+                    // A closed face keeps the cavity inside it.
+                    section.hollows.push(ccw(cavity.to_vec()));
                 }
             }
-            // Round the corner ahead.
-            let end = add(next, *t, -r);
-            points.push(end);
+            let end = add(next, *tan, -r);
+            section.outline.push(end);
             if r > 0.0 {
                 let t_next = sides[(i + 1) % 4].1;
-                let centre = add(add(next, *t, -r), t_next, r);
+                let centre = add(add(next, *tan, -r), t_next, r);
                 let a0 = (end[1] - centre[1]).atan2(end[0] - centre[0]);
                 let a1 = a0 + std::f64::consts::FRAC_PI_2;
                 for arc in geom::arc_points(centre, r, a0, a1, 4)
@@ -172,17 +271,74 @@ impl Extrusion {
                     .skip(1)
                     .take(3)
                 {
-                    points.push(arc);
+                    section.outline.push(arc);
                 }
             }
         }
-        let mut holes = Vec::new();
-        for ix in 0..self.cells_x {
-            for iy in 0..self.cells_y {
-                holes.push([-w + c * (ix as f64 + 0.5), -h + c * (iy as f64 + 0.5)]);
+        // A hole down each cell.
+        if self.hole > 0.0 {
+            for i in 0..self.cells_x {
+                for j in 0..self.cells_y {
+                    section.circles.push((self.centre(i, j), self.hole));
+                }
             }
         }
-        (points, holes)
+        // What the series puts in its corner blocks.
+        let (w, h) = (self.width() / 2.0, self.height() / 2.0);
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            if t.corner_hole > 0.0 {
+                let d = t.corner_hole_in;
+                section
+                    .circles
+                    .push(([sx * (w - d), sy * (h - d)], t.corner_hole));
+            }
+            if t.corner_void > 0.0 {
+                let (a, b) = (t.corner_wall, t.corner_wall + t.corner_void);
+                let (x0, x1) = (sx * (w - a), sx * (w - b));
+                let (y0, y1) = (sy * (h - a), sy * (h - b));
+                section.hollows.push(ccw(vec![
+                    [x0.min(x1), y0.min(y1)],
+                    [x0.max(x1), y0.min(y1)],
+                    [x0.max(x1), y0.max(y1)],
+                    [x0.min(x1), y0.max(y1)],
+                ]));
+            }
+        }
+        // The hollows between the cells of a multi-cell profile: between
+        // neighbouring cores, from core face to core face, kept a web
+        // back from any outer face's cavity floor; where four cores meet,
+        // the square between them. They join into one hollow where they
+        // touch.
+        let half = self.core() / 2.0;
+        let web = t.web;
+        let mut rects: Vec<[f64; 4]> = Vec::new();
+        for i in 0..self.cells_x {
+            for j in 0..self.cells_y {
+                let a = self.centre(i, j);
+                if i + 1 < self.cells_x {
+                    let b = self.centre(i + 1, j);
+                    let (y0, y1) = (
+                        a[1] - half + if j == 0 { web } else { 0.0 },
+                        a[1] + half - if j + 1 == self.cells_y { web } else { 0.0 },
+                    );
+                    rects.push([a[0] + half, y0, b[0] - half, y1]);
+                }
+                if j + 1 < self.cells_y {
+                    let b = self.centre(i, j + 1);
+                    let (x0, x1) = (
+                        a[0] - half + if i == 0 { web } else { 0.0 },
+                        a[0] + half - if i + 1 == self.cells_x { web } else { 0.0 },
+                    );
+                    rects.push([x0, a[1] + half, x1, b[1] - half]);
+                }
+                if i + 1 < self.cells_x && j + 1 < self.cells_y {
+                    let b = self.centre(i + 1, j + 1);
+                    rects.push([a[0] + half, a[1] + half, b[0] - half, b[1] - half]);
+                }
+            }
+        }
+        section.hollows.extend(union_outlines(&rects));
+        section
     }
 
     fn plane(&self) -> ProfilePlane {
@@ -204,20 +360,122 @@ impl Extrusion {
     }
 
     fn series_label(cell: u32) -> String {
-        format!("{cell} series ({cell}{cell}, {cell}{}…)", 2 * cell)
+        let slot = standards::extrusion(cell).map_or(0.0, |s| s.opening);
+        format!(
+            "{cell} series, slot {} ({cell}{cell}, {cell}{}…)",
+            fmt(slot),
+            2 * cell
+        )
     }
+}
+
+/// `points` turned counter-clockwise.
+fn ccw(mut points: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    if area(&points) < 0.0 {
+        points.reverse();
+    }
+    points
+}
+
+/// The signed area of a polygon: positive counter-clockwise.
+pub fn area(points: &[[f64; 2]]) -> f64 {
+    let n = points.len();
+    (0..n)
+        .map(|i| {
+            let (p, q) = (points[i], points[(i + 1) % n]);
+            p[0] * q[1] - q[0] * p[1]
+        })
+        .sum::<f64>()
+        / 2.0
+}
+
+/// The outlines of the union of axis-aligned rectangles `[x0, y0, x1,
+/// y1]`, one counter-clockwise loop per connected piece. Rectangles that
+/// overlap or share an edge join; pieces that only touch at a corner do
+/// not come out right, so callers keep clear of that.
+pub fn union_outlines(rects: &[[f64; 4]]) -> Vec<Vec<[f64; 2]>> {
+    if rects.is_empty() {
+        return Vec::new();
+    }
+    let mut xs: Vec<f64> = rects.iter().flat_map(|r| [r[0], r[2]]).collect();
+    let mut ys: Vec<f64> = rects.iter().flat_map(|r| [r[1], r[3]]).collect();
+    let dedup = |v: &mut Vec<f64>| {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        v.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+    };
+    dedup(&mut xs);
+    dedup(&mut ys);
+    let covered = |i: usize, j: usize| -> bool {
+        let (cx, cy) = ((xs[i] + xs[i + 1]) / 2.0, (ys[j] + ys[j + 1]) / 2.0);
+        rects
+            .iter()
+            .any(|r| cx > r[0] && cx < r[2] && cy > r[1] && cy < r[3])
+    };
+    // Every boundary edge, directed with the covered side on its left.
+    let mut edges: Vec<([f64; 2], [f64; 2])> = Vec::new();
+    for i in 0..xs.len() - 1 {
+        for j in 0..ys.len() - 1 {
+            if !covered(i, j) {
+                continue;
+            }
+            let (x0, x1, y0, y1) = (xs[i], xs[i + 1], ys[j], ys[j + 1]);
+            if j == 0 || !covered(i, j - 1) {
+                edges.push(([x0, y0], [x1, y0]));
+            }
+            if i + 2 == xs.len() || !covered(i + 1, j) {
+                edges.push(([x1, y0], [x1, y1]));
+            }
+            if j + 2 == ys.len() || !covered(i, j + 1) {
+                edges.push(([x1, y1], [x0, y1]));
+            }
+            if i == 0 || !covered(i - 1, j) {
+                edges.push(([x0, y1], [x0, y0]));
+            }
+        }
+    }
+    // Chain them into loops, dropping the vertices where a loop runs
+    // straight on.
+    let same = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9;
+    let mut loops = Vec::new();
+    while let Some(first) = edges.pop() {
+        let mut points = vec![first.0, first.1];
+        loop {
+            let last = *points.last().unwrap_or(&first.1);
+            if same(last, first.0) {
+                points.pop();
+                break;
+            }
+            let Some(k) = edges.iter().position(|e| same(e.0, last)) else {
+                break;
+            };
+            let e = edges.swap_remove(k);
+            points.push(e.1);
+        }
+        let n = points.len();
+        let straight: Vec<[f64; 2]> = (0..n)
+            .filter(|&k| {
+                let (p, q, r) = (points[(k + n - 1) % n], points[k], points[(k + 1) % n]);
+                ((q[0] - p[0]) * (r[1] - q[1]) - (q[1] - p[1]) * (r[0] - q[0])).abs() > 1e-9
+            })
+            .map(|k| points[k])
+            .collect();
+        if straight.len() >= 4 {
+            loops.push(straight);
+        }
+    }
+    loops
 }
 
 impl Part for Extrusion {
     const FAMILY: Family = Family::Extrusion;
 
     fn label(&self) -> String {
-        format!(
-            "{}{} × {}",
-            fmt(self.width()),
-            fmt(self.height()),
-            fmt(self.length)
-        )
+        let name = format!("{}{}", fmt(self.width()), fmt(self.height()));
+        let slots = match self.slots {
+            Slots::All => String::new(),
+            other => format!(", {}", other.name().to_lowercase()),
+        };
+        format!("{name} × {}{slots}", fmt(self.length))
     }
 
     fn icon(&self) -> &'static str {
@@ -231,6 +489,12 @@ impl Part for Extrusion {
         if self.cells_x > 8 || self.cells_y > 8 {
             return Some("At most 8 cells each way.".into());
         }
+        if self.cells_x >= 3 && self.cells_y >= 3 {
+            return Some(
+                "A profile three cells wide and three high would close a core inside its hollow; keep one way to two cells."
+                    .into(),
+            );
+        }
         let c = self.cell();
         if self.opening <= 0.0 || self.cavity <= self.opening || self.cavity >= c - 1.0 {
             return Some(
@@ -242,7 +506,7 @@ impl Part for Extrusion {
                 "The slot must be deeper than its lip and clear of the centre hole.".into(),
             );
         }
-        if self.hole < 0.0 || self.hole >= c - 2.0 * self.depth {
+        if self.hole < 0.0 || self.hole >= self.core() {
             return Some("The centre hole runs into the slots.".into());
         }
         let shoulder = self.shoulder();
@@ -262,6 +526,13 @@ impl Part for Extrusion {
         if self.opening / 2.0 + v + self.corner >= c / 2.0 {
             return Some("The slot opening runs into the corner.".into());
         }
+        let t = self.table();
+        if t.corner_void > 0.0 && t.corner_wall + t.corner_void >= (c - self.cavity) / 2.0 {
+            return Some("The corner hollow runs into the slots.".into());
+        }
+        if (self.cells_x > 1 || self.cells_y > 1) && self.core() <= 2.0 * t.web + 0.5 {
+            return Some("The core is too small to leave a hollow between the cells.".into());
+        }
         if !AXES.contains(&self.along.as_str()) {
             return Some("The axis is X, Y or Z.".into());
         }
@@ -277,15 +548,15 @@ impl Part for Extrusion {
     }
 
     fn ops(&self) -> Vec<SolidOp> {
-        let (outline, holes) = self.outline();
-        let mut wires = vec![geom::polygon(&outline)];
-        if self.hole > 0.0 {
-            wires.extend(
-                holes
-                    .into_iter()
-                    .map(|c| vec![geom::circle_at(c, self.hole)]),
-            );
-        }
+        let section = self.section();
+        let mut wires: Vec<Vec<ProfileSegment>> = vec![geom::polygon(&section.outline)];
+        wires.extend(
+            section
+                .circles
+                .iter()
+                .map(|(c, d)| vec![geom::circle_at(*c, *d)]),
+        );
+        wires.extend(section.hollows.iter().map(|h| geom::polygon(h)));
         vec![geom::extrude(
             self.plane(),
             wires,
@@ -303,6 +574,7 @@ impl Part for Extrusion {
             .iter()
             .position(|s| s.cell == self.series)
             .unwrap_or(0);
+        let slots: Vec<&str> = Slots::ALL.iter().map(|s| s.name()).collect();
         let mut widgets = vec![
             self.drawing(ctx),
             choice("series", "Series", &series, selected),
@@ -315,7 +587,16 @@ impl Part for Extrusion {
                 &AXES,
                 AXES.iter().position(|a| *a == self.along).unwrap_or(2),
             ),
-            toggle("v_slot", "V-slot", self.v_slot),
+            choice(
+                "slots",
+                "Slotted faces",
+                &slots,
+                Slots::ALL
+                    .iter()
+                    .position(|s| *s == self.slots)
+                    .unwrap_or(0),
+            ),
+            toggle("v_slot", "V-slot lips", self.v_slot),
         ];
         let mut dims = vec![toggle("custom", "Custom slot", self.custom)];
         if self.custom {
@@ -364,6 +645,7 @@ impl Part for Extrusion {
                     }
                 }
                 "along" => self.along = AXES.get(*index).unwrap_or(&"Z").to_string(),
+                "slots" => self.slots = Slots::ALL.get(*index).copied().unwrap_or_default(),
                 _ => return false,
             },
             PanelEvent::Number { id, value } => match id.as_str() {
@@ -438,6 +720,11 @@ impl Part for Extrusion {
             }
             e.along = along;
         }
+        if let Some(slots) = arg_str(args, "slots") {
+            e.slots = Slots::named(slots).ok_or_else(|| {
+                format!("`{slots}` is not a slot layout: all, three, adjacent, opposite or one")
+            })?;
+        }
         if let Some(on) = arg_bool(args, "v_slot") {
             e.v_slot = on;
         }
@@ -463,28 +750,23 @@ impl Extrusion {
     /// The section, as it is cut.
     fn drawing(&self, ctx: &Ctx) -> Widget {
         let mut s = Sketch::new(ctx.focus);
-        let (outline, holes) = self.outline();
+        let section = self.section();
         let (w, h) = (self.width() / 2.0, self.height() / 2.0);
         let off = Sketch::standoff(self.width().max(self.height()));
-        s.poly(&outline, DiagramStroke::Outline, false);
-        for hole in &holes {
-            if self.hole > 0.0 {
-                s.circle(*hole, self.hole, DiagramStroke::Outline, false);
+        s.poly(&section.outline, DiagramStroke::Outline, false);
+        for (c, d) in &section.circles {
+            s.circle(*c, *d, DiagramStroke::Outline, false);
+        }
+        for hollow in &section.hollows {
+            s.poly(hollow, DiagramStroke::Outline, false);
+        }
+        for i in 0..self.cells_x {
+            for j in 0..self.cells_y {
+                let c = self.centre(i, j);
+                let k = self.cell() * 0.1;
+                s.line(&[[c[0] - k, c[1]], [c[0] + k, c[1]]], DiagramStroke::Axis);
+                s.line(&[[c[0], c[1] - k], [c[0], c[1] + k]], DiagramStroke::Axis);
             }
-            s.line(
-                &[
-                    [hole[0] - self.cell() * 0.1, hole[1]],
-                    [hole[0] + self.cell() * 0.1, hole[1]],
-                ],
-                DiagramStroke::Axis,
-            );
-            s.line(
-                &[
-                    [hole[0], hole[1] - self.cell() * 0.1],
-                    [hole[0], hole[1] + self.cell() * 0.1],
-                ],
-                DiagramStroke::Axis,
-            );
         }
         s.width("cells_x", -w, w, h, off, fmt(self.width()));
         s.height("cells_y", -w, -h, h, off, fmt(self.height()));
@@ -507,9 +789,10 @@ impl Extrusion {
             format!("L {} along {}", fmt(self.length), self.along),
         );
         if self.hole > 0.0 {
+            let c = self.centre(0, 0);
             s.callout(
                 "hole",
-                [holes[0][0] + self.hole / 2.0, holes[0][1]],
+                [c[0] + self.hole / 2.0, c[1]],
                 [-w - off * 1.6, -h - off * 0.6],
                 format!("Ø{}", fmt(self.hole)),
             );
@@ -523,38 +806,167 @@ mod tests {
     use super::*;
     use printcad_bench_sdk::json;
 
-    #[test]
-    fn a_2020_has_four_slots_and_one_hole() {
-        let e = Extrusion::new(20, 1, 1, 100.0);
-        assert_eq!(e.label(), "2020 × 100");
-        assert_eq!(e.problem(), None);
-        let (outline, holes) = e.outline();
-        assert_eq!(holes, [[0.0, 0.0]]);
-        // 4 sides × (start, 8 slot points, end, 3 arc points).
-        assert_eq!(outline.len(), 4 * 15);
-        let xs = outline.iter().map(|p| p[0]);
-        assert!(xs.clone().fold(f64::MIN, f64::max) <= 10.0 + 1e-9);
-        assert!(xs.fold(f64::MAX, f64::min) >= -10.0 - 1e-9);
-        // The slot's floor sits at its depth.
-        assert!(outline.iter().any(|p| (p[1] - (-10.0 + 6.0)).abs() < 1e-9));
+    /// Whether segments `a`–`b` and `c`–`d` cross.
+    fn crosses(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+        let orient = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+            (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        };
+        let (o1, o2) = (orient(a, b, c), orient(a, b, d));
+        let (o3, o4) = (orient(c, d, a), orient(c, d, b));
+        o1 * o2 < -1e-12 && o3 * o4 < -1e-12
+    }
+
+    fn simple(points: &[[f64; 2]]) -> bool {
+        let n = points.len();
+        for i in 0..n {
+            for j in i + 2..n {
+                if i == 0 && j == n - 1 {
+                    continue;
+                }
+                if crosses(
+                    points[i],
+                    points[(i + 1) % n],
+                    points[j],
+                    points[(j + 1) % n],
+                ) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// The section's area: the outline less its holes and hollows.
+    fn section_area(e: &Extrusion) -> f64 {
+        let s = e.section();
+        area(&s.outline)
+            - s.circles
+                .iter()
+                .map(|(_, d)| std::f64::consts::PI * d * d / 4.0)
+                .sum::<f64>()
+            - s.hollows.iter().map(|h| area(h).abs()).sum::<f64>()
+    }
+
+    fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
+        let n = poly.len();
+        let mut hit = false;
+        for i in 0..n {
+            let (a, b) = (poly[i], poly[(i + 1) % n]);
+            if (a[1] > p[1]) != (b[1] > p[1])
+                && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]
+            {
+                hit = !hit;
+            }
+        }
+        hit
     }
 
     #[test]
-    fn a_2040_has_six_slots_and_two_holes() {
+    fn a_2020_is_sized_as_its_maker_draws_it() {
+        let e = Extrusion::new(20, 1, 1, 100.0);
+        assert_eq!(e.label(), "2020 × 100");
+        assert_eq!(e.problem(), None);
+        let s = e.section();
+        assert_eq!(s.circles, [([0.0, 0.0], 4.2)]);
+        assert!(s.hollows.is_empty());
+        assert!(simple(&s.outline));
+        assert!(
+            (e.floor() - 6.0).abs() < 1e-9,
+            "the floor, which a 5.8 nut sits on"
+        );
+        assert!((e.core() - 8.0).abs() < 1e-9);
+        // The catalogue says 183 mm².
+        let a = section_area(&e);
+        assert!((a - 183.0).abs() < 183.0 * 0.03, "{a}");
+    }
+
+    #[test]
+    fn every_series_outline_is_simple_and_weighs_what_the_catalogue_says() {
+        for series in standards::EXTRUSIONS {
+            let e = Extrusion::new(series.cell, 1, 1, 10.0);
+            assert_eq!(e.problem(), None, "{}", series.cell);
+            let s = e.section();
+            assert!(simple(&s.outline), "{}", series.cell);
+            for h in &s.hollows {
+                assert!(simple(h), "{}", series.cell);
+                assert!(
+                    area(h) > 0.0,
+                    "{}: hollows are counter-clockwise",
+                    series.cell
+                );
+            }
+            let a = section_area(&e);
+            assert!(
+                (a - series.area_mm2).abs() < series.area_mm2 * 0.12,
+                "{}: {a} against {}",
+                series.cell,
+                series.area_mm2
+            );
+        }
+    }
+
+    #[test]
+    fn a_2040_is_hollow_between_its_cells_and_a_4040_in_a_cross() {
         let e = Extrusion::new(20, 1, 2, 50.0);
         assert_eq!(e.label(), "2040 × 50");
-        let (outline, holes) = e.outline();
-        assert_eq!(holes.len(), 2);
-        assert_eq!(outline.len(), 4 * 5 + 6 * 10);
+        let s = e.section();
+        assert_eq!(s.circles.len(), 2);
+        assert_eq!(s.hollows.len(), 1, "one hollow between the two cells");
+        let h = &s.hollows[0];
+        assert!(inside([0.0, 0.0], h));
+        assert!(!inside([3.0, 0.0], h), "a web keeps it from the side slots");
+        assert!(!inside([0.0, 7.0], h), "it stops at the core");
+        let e = Extrusion::new(20, 2, 2, 50.0);
+        let s = e.section();
+        assert_eq!(s.circles.len(), 4);
+        assert_eq!(s.hollows.len(), 1, "the channels and the square join");
+        let h = &s.hollows[0];
+        assert!(inside([0.0, 0.0], h));
+        assert!(inside([0.0, 10.0], h), "12 wide at the hole row, as drawn");
+        assert!(inside([5.5, 10.0], h));
+        assert!(
+            !inside([0.0, 13.0], h),
+            "a web under the top face's cavities"
+        );
+        assert!(!inside([8.0, 8.0], h), "the cores are solid");
+        assert!(simple(h));
         assert_eq!(e.ops().len(), 1);
+    }
+
+    #[test]
+    fn closed_faces_keep_their_cavities_inside() {
+        let mut e = Extrusion::new(20, 1, 1, 10.0);
+        e.slots = Slots::Three;
+        let s = e.section();
+        assert_eq!(s.hollows.len(), 1, "the top's cavity, closed");
+        assert!(inside([0.0, 6.0], &s.hollows[0]));
+        assert!(s.outline.iter().all(|p| p[1] < 10.0 + 1e-9));
+        assert!(simple(&s.outline));
+        e.slots = Slots::One;
+        assert_eq!(e.section().hollows.len(), 3);
+        assert_eq!(e.label(), "2020 × 10, one (bottom)");
+    }
+
+    #[test]
+    fn the_30_series_has_corner_holes_and_the_40_series_hollow_corners() {
+        let s = Extrusion::new(30, 1, 1, 10.0).section();
+        assert_eq!(s.circles.len(), 5);
+        assert!(
+            s.circles
+                .iter()
+                .any(|(c, d)| *d == 4.2 && (c[0] - 11.6).abs() < 1e-9)
+        );
+        let s = Extrusion::new(40, 1, 1, 10.0).section();
+        assert_eq!(s.hollows.len(), 4);
+        assert!(s.hollows.iter().any(|h| inside([15.0, 15.0], h)));
     }
 
     #[test]
     fn a_v_slot_cuts_its_lips_back() {
         let mut e = Extrusion::new(20, 1, 1, 10.0);
-        let plain = e.outline().0;
+        let plain = e.section().outline;
         e.v_slot = true;
-        let v = e.outline().0;
+        let v = e.section().outline;
         assert_eq!(plain.len(), v.len());
         assert_ne!(plain, v);
         assert_eq!(e.problem(), None);
@@ -569,78 +981,36 @@ mod tests {
         }));
         assert_eq!(e.axis().1, [80.0, 0.0, 0.0]);
         let e = Extrusion::with_args(
-            &json!({"profile": "4080", "series": 40, "along": "y"}),
+            &json!({"profile": "4080", "series": 40, "along": "y", "slots": "three"}),
             &Defaults::default(),
         )
         .unwrap();
-        assert_eq!((e.cells_x, e.cells_y, e.along.as_str()), (1, 2, "Y"));
+        assert_eq!(
+            (e.cells_x, e.cells_y, e.along.as_str(), e.slots),
+            (1, 2, "Y", Slots::Three)
+        );
         assert!(Extrusion::with_args(&json!({"profile": "2030"}), &Defaults::default()).is_err());
     }
 
-    /// Whether segments `a`–`b` and `c`–`d` cross.
-    fn crosses(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
-        let orient = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
-            (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-        };
-        let (o1, o2) = (orient(a, b, c), orient(a, b, d));
-        let (o3, o4) = (orient(c, d, a), orient(c, d, b));
-        o1 * o2 < -1e-12 && o3 * o4 < -1e-12
-    }
-
-    fn area(points: &[[f64; 2]]) -> f64 {
-        let n = points.len();
-        (0..n)
-            .map(|i| {
-                let (p, q) = (points[i], points[(i + 1) % n]);
-                p[0] * q[1] - q[0] * p[1]
-            })
-            .sum::<f64>()
-            / 2.0
+    #[test]
+    fn rectangles_union_into_outlines() {
+        let plus = union_outlines(&[
+            [-6.0, -6.0, 6.0, 6.0],
+            [-6.0, 6.0, 6.0, 12.0],
+            [6.0, -6.0, 12.0, 6.0],
+        ]);
+        assert_eq!(plus.len(), 1);
+        assert_eq!(plus[0].len(), 6, "the collinear bottom edge is one");
+        assert!((area(&plus[0]) - (144.0 + 72.0 + 72.0)).abs() < 1e-9);
+        let two = union_outlines(&[[0.0, 0.0, 1.0, 1.0], [2.0, 0.0, 3.0, 1.0]]);
+        assert_eq!(two.len(), 2);
     }
 
     #[test]
-    fn an_outline_never_crosses_itself_and_leaves_webs_between_the_slots() {
-        for (series, cx, cy, v) in [
-            (20, 1, 1, false),
-            (20, 1, 1, true),
-            (20, 1, 2, false),
-            (30, 1, 1, false),
-            (30, 2, 1, true),
-            (40, 1, 1, false),
-            (40, 1, 2, false),
-        ] {
-            let mut e = Extrusion::new(series, cx, cy, 10.0);
-            e.v_slot = v;
-            assert_eq!(e.problem(), None, "{series} {cx}x{cy}");
-            let (outline, _) = e.outline();
-            let n = outline.len();
-            for i in 0..n {
-                for j in i + 2..n {
-                    if i == 0 && j == n - 1 {
-                        continue;
-                    }
-                    assert!(
-                        !crosses(
-                            outline[i],
-                            outline[(i + 1) % n],
-                            outline[j],
-                            outline[(j + 1) % n]
-                        ),
-                        "{series} {cx}x{cy}: segments {i} and {j} cross"
-                    );
-                }
-            }
-            // The section is between a third and two thirds of its cell: a
-            // real profile's weight, not a frame of corners.
-            let share = area(&outline) / (e.width() * e.height());
-            assert!((0.35..0.7).contains(&share), "{series} {cx}x{cy}: {share}");
-        }
-    }
-
-    #[test]
-    fn a_slot_into_the_centre_hole_is_refused() {
+    fn a_slot_into_the_centre_hole_and_a_three_by_three_are_refused() {
         let mut e = Extrusion::new(20, 1, 1, 10.0);
         e.depth = 9.0;
         assert!(e.problem().is_some());
+        assert!(Extrusion::new(20, 3, 3, 10.0).problem().is_some());
     }
 }

@@ -10,6 +10,7 @@ pub mod nut;
 pub mod rod;
 pub mod screw;
 pub mod spring;
+pub mod tnut;
 pub mod washer;
 
 use printcad_bench_sdk::api::kernel_api::SolidOp;
@@ -25,6 +26,7 @@ pub use nut::Nut;
 pub use rod::Rod;
 pub use screw::Screw;
 pub use spring::Spring;
+pub use tnut::TNut;
 pub use washer::Washer;
 
 /// The package id every kind, tool and command is named under.
@@ -88,6 +90,7 @@ pub trait Part: Clone + Serialize + DeserializeOwned {
 pub enum Family {
     Screw,
     Nut,
+    TNut,
     Washer,
     Extrusion,
     Insert,
@@ -98,9 +101,10 @@ pub enum Family {
 }
 
 impl Family {
-    pub const ALL: [Family; 9] = [
+    pub const ALL: [Family; 10] = [
         Family::Screw,
         Family::Nut,
+        Family::TNut,
         Family::Washer,
         Family::Extrusion,
         Family::Insert,
@@ -114,6 +118,7 @@ impl Family {
         match self {
             Family::Screw => "screw",
             Family::Nut => "nut",
+            Family::TNut => "tnut",
             Family::Washer => "washer",
             Family::Extrusion => "extrusion",
             Family::Insert => "insert",
@@ -128,6 +133,7 @@ impl Family {
         match self {
             Family::Screw => "Screw",
             Family::Nut => "Nut",
+            Family::TNut => "T-slot nut",
             Family::Washer => "Washer",
             Family::Extrusion => "Extrusion",
             Family::Insert => "Heat-set insert",
@@ -159,6 +165,7 @@ impl Family {
 pub enum Hardware {
     Screw(Screw),
     Nut(Nut),
+    TNut(TNut),
     Washer(Washer),
     Extrusion(Extrusion),
     Insert(Insert),
@@ -173,6 +180,7 @@ macro_rules! each {
         match $self {
             Hardware::Screw($p) => $body,
             Hardware::Nut($p) => $body,
+            Hardware::TNut($p) => $body,
             Hardware::Washer($p) => $body,
             Hardware::Extrusion($p) => $body,
             Hardware::Insert($p) => $body,
@@ -194,6 +202,7 @@ impl Hardware {
         Some(match Family::from_kind(kind)? {
             Family::Screw => Hardware::Screw(read(data)?),
             Family::Nut => Hardware::Nut(read(data)?),
+            Family::TNut => Hardware::TNut(read(data)?),
             Family::Washer => Hardware::Washer(read(data)?),
             Family::Extrusion => Hardware::Extrusion(read(data)?),
             Family::Insert => Hardware::Insert(read(data)?),
@@ -213,6 +222,7 @@ impl Hardware {
         Ok(match family {
             Family::Screw => Hardware::Screw(Screw::with_args(args, defaults)?),
             Family::Nut => Hardware::Nut(Nut::with_args(args, defaults)?),
+            Family::TNut => Hardware::TNut(TNut::with_args(args, defaults)?),
             Family::Washer => Hardware::Washer(Washer::with_args(args, defaults)?),
             Family::Extrusion => Hardware::Extrusion(Extrusion::with_args(args, defaults)?),
             Family::Insert => Hardware::Insert(Insert::with_args(args, defaults)?),

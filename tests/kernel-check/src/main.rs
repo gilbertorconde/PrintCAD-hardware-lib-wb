@@ -19,7 +19,11 @@ use parts::nut::NutKind;
 use parts::rod::RodKind;
 use parts::screw::Head;
 use parts::washer::WasherKind;
-use parts::{Bearing, Defaults, Extrusion, Hardware, Insert, Magnet, Nut, Rod, Screw, Spring, Washer};
+use parts::extrusion::Slots;
+use parts::tnut::TNutKind;
+use parts::{
+    Bearing, Defaults, Extrusion, Hardware, Insert, Magnet, Nut, Rod, Screw, Spring, TNut, Washer,
+};
 use kernel_api::TessellationSettings;
 
 struct Case {
@@ -69,6 +73,28 @@ fn cases() -> Vec<Case> {
     x.along = "X".into();
     case("extrusion 4040 × 60 along X", Hardware::Extrusion(x));
     case("extrusion 3060 × 30", Hardware::Extrusion(Extrusion::new(30, 1, 2, 30.0)));
+    for slots in [Slots::Three, Slots::Adjacent, Slots::Opposite, Slots::One] {
+        let mut e = Extrusion::new(20, 1, 1, 30.0);
+        e.slots = slots;
+        case(&format!("extrusion 2020 × 30, {:?}", slots), Hardware::Extrusion(e));
+    }
+    let mut f = Extrusion::new(20, 1, 2, 30.0);
+    f.slots = Slots::Three;
+    case("extrusion 2040 × 30, Three", Hardware::Extrusion(f));
+    case("extrusion 3030 × 30", Hardware::Extrusion(Extrusion::new(30, 1, 1, 30.0)));
+    case("extrusion 4040 × 30", Hardware::Extrusion(Extrusion::new(40, 1, 1, 30.0)));
+    case("extrusion 2080 × 30", Hardware::Extrusion(Extrusion::new(20, 1, 4, 30.0)));
+    for series in [20, 30, 40] {
+        for kind in TNutKind::ALL {
+            case(
+                &format!("tnut {:?} {series}", kind),
+                Hardware::TNut(TNut::new(kind, series, "M5", &d)),
+            );
+        }
+    }
+    let mut threaded = TNut::new(TNutKind::DropIn, 20, "M5", &d);
+    threaded.thread = true;
+    case("tnut DropIn 20 M5, modelled thread", Hardware::TNut(threaded));
     case("insert M3", Hardware::Insert(Insert::new("M3", &d)));
     let mut insert = Insert::new("M4", &d);
     insert.thread = true;

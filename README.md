@@ -14,9 +14,10 @@ number takes a formula, as printCAD's own fields do.
 | Family | Parts | Sized by |
 | --- | --- | --- |
 | Screws | socket head cap, button head, countersunk, hex bolt, low head cap, set screw | ISO 4762 / DIN 912, ASME B18.3 (inch), ISO 7380-1, ISO 10642, ISO 4017, DIN 7984, ISO 4026 |
-| Nuts | hex, thin, nylon insert lock, square, T-slot | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557; T-nuts by extrusion series |
+| Nuts | hex, thin, nylon insert lock, square | ISO 4032, ISO 4035, DIN 985, DIN 562, DIN 557 |
+| T-slot nuts | sliding, drop-in, spring-ball drop-in, twist (turns to lock), roll-in with set screw, for the 20, 30 and 40 series | the extrusion maker's drawings (Misumi HNTT, HNTA, HNTP, HNTF, HNTR) |
 | Washers | plain, large, spring lock | ISO 7089, ISO 7093, DIN 127 |
-| Extrusions | T-slot profiles of the 20, 30 and 40 series (2020, 2040, 4080…), V-slot lips | the series' slot |
+| Extrusions | T-slot profiles of the 20, 30 and 40 series (slots 6, 8 and 10): any cells (2020, 2040, 4080…), hollow between cells, all faces slotted or the one-, two- and three-slot variants, V-slot lips | the extrusion maker's drawings (Misumi HFS5, HFS6, HFS8) |
 | Inserts | heat-set threaded inserts, M2 to M6, standard and short, with the hole to drive them into | the common brass ones (CNC Kitchen, Ruthex) |
 | Bearings | deep groove ball bearings (608, 625, 6000…), linear bushings (LM8UU…) | their designations |
 | Magnets | discs, rings, blocks | common sizes, or any |
@@ -33,7 +34,8 @@ with another:
 
 ```lua
 pc.io.github.gilbertorconde.hardware.make{part = "screw", head = "button", size = "M4", length = 16}
-pc.io.github.gilbertorconde.hardware.make{part = "extrusion", profile = "2040", length = 300, along = "X"}
+pc.io.github.gilbertorconde.hardware.make{part = "extrusion", profile = "2040", length = 300, along = "X", slots = "three"}
+pc.io.github.gilbertorconde.hardware.make{part = "tnut", kind = "spring_ball", series = 20, size = "M5"}
 pc.io.github.gilbertorconde.hardware.make{part = "bearing", name = "608"}
 pc.io.github.gilbertorconde.hardware.catalog{}
 ```

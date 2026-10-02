@@ -14,6 +14,8 @@ use kernel_api::TessellationSettings;
 use parts::nut::{Nut, NutKind};
 use parts::rod::{Rod, RodKind};
 use parts::screw::{Head, Screw};
+use parts::extrusion::{Extrusion, Slots};
+use parts::tnut::{TNut, TNutKind};
 use parts::{Defaults, Hardware, Insert, Spring};
 
 fn main() {
@@ -32,6 +34,16 @@ fn main() {
         ("nut-m4-thread", Hardware::Nut(nut)),
         ("rod-m6-thread", Hardware::Rod(rod)),
         ("spring", Hardware::Spring(Spring::default())),
+        ("extrusion-4040", Hardware::Extrusion(Extrusion::new(40, 1, 1, 20.0))),
+        ("extrusion-2040", Hardware::Extrusion(Extrusion::new(20, 1, 2, 20.0))),
+        ("extrusion-2020-three", {
+            let mut e = Extrusion::new(20, 1, 1, 20.0);
+            e.slots = Slots::Three;
+            Hardware::Extrusion(e)
+        }),
+        ("tnut-spring-20", Hardware::TNut(TNut::new(TNutKind::SpringBall, 20, "M5", &d))),
+        ("tnut-twist-20", Hardware::TNut(TNut::new(TNutKind::Twist, 20, "M4", &d))),
+        ("tnut-rollin-30", Hardware::TNut(TNut::new(TNutKind::RollIn, 30, "M5", &d))),
     ];
     let mut kernel = kernel_ogeom::OgeomKernel::new();
     let detail = TessellationSettings::default();

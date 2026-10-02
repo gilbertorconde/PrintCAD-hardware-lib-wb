@@ -6,6 +6,7 @@ description = "Standard hardware for printed designs: screws, nuts, washers, T-s
 feature_kinds = [
     "io.github.gilbertorconde.hardware.screw",
     "io.github.gilbertorconde.hardware.nut",
+    "io.github.gilbertorconde.hardware.tnut",
     "io.github.gilbertorconde.hardware.washer",
     "io.github.gilbertorconde.hardware.extrusion",
     "io.github.gilbertorconde.hardware.insert",

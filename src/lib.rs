@@ -21,10 +21,11 @@ use parts::bearing::BearingKind;
 use parts::nut::NutKind;
 use parts::rod::RodKind;
 use parts::screw::Head;
+use parts::tnut::TNutKind;
 use parts::washer::WasherKind;
 use parts::{
     Bearing, Ctx, Defaults, Extrusion, Family, Hardware, Insert, Magnet, Nut, PACKAGE, Rod, Screw,
-    Spring, Washer,
+    Spring, TNut, Washer,
 };
 
 /// A tool of the toolbar: what it makes.
@@ -63,7 +64,20 @@ nut_tool!(seed_hex_nut, NutKind::Hex);
 nut_tool!(seed_thin_nut, NutKind::Thin);
 nut_tool!(seed_nyloc_nut, NutKind::Nyloc);
 nut_tool!(seed_square_nut, NutKind::Square);
-nut_tool!(seed_tslot_nut, NutKind::TSlot);
+
+macro_rules! tnut_tool {
+    ($name:ident, $kind:expr) => {
+        fn $name(d: &Defaults) -> Hardware {
+            Hardware::TNut(TNut::new($kind, d.series, &d.size, d))
+        }
+    };
+}
+
+tnut_tool!(seed_sliding_tnut, TNutKind::Sliding);
+tnut_tool!(seed_drop_in_tnut, TNutKind::DropIn);
+tnut_tool!(seed_spring_tnut, TNutKind::SpringBall);
+tnut_tool!(seed_twist_tnut, TNutKind::Twist);
+tnut_tool!(seed_roll_in_tnut, TNutKind::RollIn);
 
 fn seed_washer(d: &Defaults) -> Hardware {
     Hardware::Washer(Washer::new(WasherKind::Flat, &d.size))
@@ -181,14 +195,6 @@ const TOOLS: &[ToolDef] = &[
         seed: seed_square_nut,
     },
     ToolDef {
-        suffix: "tslot_nut",
-        label: "T-slot nut",
-        icon: "nut-tslot",
-        category: "Nuts",
-        row: 1,
-        seed: seed_tslot_nut,
-    },
-    ToolDef {
         suffix: "washer",
         label: "Washer",
         icon: "washer-flat",
@@ -216,9 +222,49 @@ const TOOLS: &[ToolDef] = &[
         suffix: "extrusion",
         label: "T-slot extrusion",
         icon: "extrusion",
-        category: "Frame",
+        category: "T-slot",
         row: 2,
         seed: seed_extrusion,
+    },
+    ToolDef {
+        suffix: "sliding_tnut",
+        label: "Sliding T-nut",
+        icon: "tnut-sliding",
+        category: "T-slot",
+        row: 2,
+        seed: seed_sliding_tnut,
+    },
+    ToolDef {
+        suffix: "drop_in_tnut",
+        label: "Drop-in T-nut",
+        icon: "tnut-drop-in",
+        category: "T-slot",
+        row: 2,
+        seed: seed_drop_in_tnut,
+    },
+    ToolDef {
+        suffix: "spring_tnut",
+        label: "Spring-ball T-nut",
+        icon: "tnut-spring",
+        category: "T-slot",
+        row: 2,
+        seed: seed_spring_tnut,
+    },
+    ToolDef {
+        suffix: "twist_tnut",
+        label: "Twist T-nut",
+        icon: "tnut-twist",
+        category: "T-slot",
+        row: 2,
+        seed: seed_twist_tnut,
+    },
+    ToolDef {
+        suffix: "roll_in_tnut",
+        label: "Roll-in T-nut",
+        icon: "tnut-roll-in",
+        category: "T-slot",
+        row: 2,
+        seed: seed_roll_in_tnut,
     },
     ToolDef {
         suffix: "insert",
@@ -284,7 +330,7 @@ fn id(suffix: &str) -> String {
 
 /// Every numeric field of every family that is a length, for the
 /// property panel to show in the document's unit.
-const LENGTH_KEYS: [&str; 32] = [
+const LENGTH_KEYS: [&str; 34] = [
     "length",
     "d",
     "pitch",
@@ -296,9 +342,6 @@ const LENGTH_KEYS: [&str; 32] = [
     "m",
     "collar_d",
     "collar_h",
-    "neck",
-    "neck_h",
-    "tlength",
     "d1",
     "d2",
     "h",
@@ -317,6 +360,11 @@ const LENGTH_KEYS: [&str; 32] = [
     "lead",
     "shoulder",
     "pilot",
+    "top",
+    "bottom",
+    "thick",
+    "straight",
+    "thread_at",
 ];
 
 #[derive(Default)]
@@ -401,18 +449,23 @@ impl HardwareBench {
         let nut: Vec<Value> = NutKind::ALL
             .iter()
             .map(|k| {
-                let standards: Vec<Value> = if *k == NutKind::TSlot {
-                    standards::T_NUTS
-                        .iter()
-                        .map(|t| json!({"name": format!("Series {}", t.series), "sizes": t.sizes}))
-                        .collect()
-                } else {
-                    k.standards()
-                        .iter()
-                        .map(|t| json!({"name": t.name, "sizes": t.rows.iter().map(|r| r.size).collect::<Vec<_>>()}))
-                        .collect()
-                };
+                let standards: Vec<Value> = k
+                    .standards()
+                    .iter()
+                    .map(|t| json!({"name": t.name, "sizes": t.rows.iter().map(|r| r.size).collect::<Vec<_>>()}))
+                    .collect();
                 json!({"kind": k.tool(), "standards": standards})
+            })
+            .collect();
+        let tnut: Vec<Value> = TNutKind::ALL
+            .iter()
+            .map(|k| {
+                let series: Vec<Value> = standards::T_NUTS
+                    .iter()
+                    .filter(|r| r.kind == *k)
+                    .map(|r| json!({"series": r.series, "sizes": r.sizes}))
+                    .collect();
+                json!({"kind": k.tool(), "series": series})
             })
             .collect();
         let washer: Vec<Value> = WasherKind::ALL
@@ -428,10 +481,12 @@ impl HardwareBench {
         json!({
             "screw": screw,
             "nut": nut,
+            "tnut": tnut,
             "washer": washer,
             "extrusion": {
                 "series": standards::EXTRUSIONS.iter().map(|s| s.cell).collect::<Vec<_>>(),
                 "along": parts::extrusion::AXES,
+                "slots": ["all", "three", "adjacent", "opposite", "one"],
             },
             "insert": standards::INSERTS.iter().map(|r| r.size).collect::<Vec<_>>(),
             "bearing": {
@@ -479,9 +534,9 @@ impl Bench for HardwareBench {
                     id: id(MAKE),
                     summary: "Make a part on a body of its own".into(),
                     params: vec![
-                        param("part", ParamKind::String, true, "`screw`, `nut`, `washer`, `extrusion`, `insert`, `bearing`, `magnet`, `rod` or `spring`"),
+                        param("part", ParamKind::String, true, "`screw`, `nut`, `tnut`, `washer`, `extrusion`, `insert`, `bearing`, `magnet`, `rod` or `spring`"),
                         param("head", ParamKind::String, false, "a screw's head: `socket_cap` (the default), `button`, `countersunk`, `hex_bolt`, `low_head` or `set_screw`"),
-                        param("kind", ParamKind::String, false, "a nut's (`hex`, `thin`, `nyloc`, `square`, `tslot`), washer's (`flat`, `large`, `spring`), bearing's (`ball`, `linear`) or rod's (`shaft`, `threaded_rod`, `lead_screw`, `dowel_pin`) kind"),
+                        param("kind", ParamKind::String, false, "a nut's (`hex`, `thin`, `nyloc`, `square`), T-slot nut's (`sliding`, `drop_in`, `spring_ball`, `twist`, `roll_in`), washer's (`flat`, `large`, `spring`), bearing's (`ball`, `linear`) or rod's (`shaft`, `threaded_rod`, `lead_screw`, `dowel_pin`) kind"),
                         param("standard", ParamKind::String, false, "the standard to size by, as `catalog` names it; the first when left out"),
                         param("size", ParamKind::String, false, "the thread size, `M3`; the Preferences default when left out"),
                         param("length", ParamKind::Number, false, "mm; a screw's from under its head"),
@@ -490,6 +545,7 @@ impl Bench for HardwareBench {
                         param("series", ParamKind::Integer, false, "an extrusion's or T-nut's series: 20, 30 or 40"),
                         param("profile", ParamKind::String, false, "an extrusion's profile, `2040`"),
                         param("along", ParamKind::String, false, "an extrusion's axis: `X`, `Y` or `Z`"),
+                        param("slots", ParamKind::String, false, "an extrusion's slotted faces: `all`, `three`, `adjacent`, `opposite` or `one`"),
                         param("name", ParamKind::String, false, "a bearing's designation, `608` or `LM8UU`"),
                         param("shape", ParamKind::String, false, "a magnet's shape: `disc`, `ring` or `block`"),
                         param("d", ParamKind::Number, false, "any dimension the part's panel shows may be given by its name (`d`, `dk`, `k`, `s`, `m`, `outer`, `wire`, `turns`…) and makes the part custom"),

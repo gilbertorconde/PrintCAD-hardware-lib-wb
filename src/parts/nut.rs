@@ -1,5 +1,5 @@
-//! Nuts: hex, thin, nylon-collared, square and T-slot nuts. A nut stands
-//! on `z = 0` with its axis up Z.
+//! Nuts: hex, thin, nylon-collared and square. A nut stands on `z = 0`
+//! with its axis up Z. T-slot nuts are a family of their own (`tnut`).
 
 use printcad_bench_sdk::Value;
 use printcad_bench_sdk::api::kernel_api::{BooleanOp, SolidOp};
@@ -12,7 +12,7 @@ use super::{
 };
 use crate::diagram::Sketch;
 use crate::geom::{self, across_corners, revolve};
-use crate::standards::{self, NutTable, TNutRow, internal_minor};
+use crate::standards::{self, NutTable, internal_minor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,17 +21,10 @@ pub enum NutKind {
     Thin,
     Nyloc,
     Square,
-    TSlot,
 }
 
 impl NutKind {
-    pub const ALL: [NutKind; 5] = [
-        NutKind::Hex,
-        NutKind::Thin,
-        NutKind::Nyloc,
-        NutKind::Square,
-        NutKind::TSlot,
-    ];
+    pub const ALL: [NutKind; 4] = [NutKind::Hex, NutKind::Thin, NutKind::Nyloc, NutKind::Square];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -39,7 +32,6 @@ impl NutKind {
             NutKind::Thin => "Thin hex",
             NutKind::Nyloc => "Nylon insert lock",
             NutKind::Square => "Square",
-            NutKind::TSlot => "T-slot",
         }
     }
 
@@ -49,7 +41,6 @@ impl NutKind {
             NutKind::Thin => "thin nut",
             NutKind::Nyloc => "lock nut",
             NutKind::Square => "square nut",
-            NutKind::TSlot => "T-nut",
         }
     }
 
@@ -59,7 +50,6 @@ impl NutKind {
             NutKind::Thin => "nut-thin",
             NutKind::Nyloc => "nut-nyloc",
             NutKind::Square => "nut-square",
-            NutKind::TSlot => "nut-tslot",
         }
     }
 
@@ -69,7 +59,6 @@ impl NutKind {
             NutKind::Thin => "thin_nut",
             NutKind::Nyloc => "nyloc_nut",
             NutKind::Square => "square_nut",
-            NutKind::TSlot => "tslot_nut",
         }
     }
 
@@ -82,15 +71,13 @@ impl NutKind {
         })
     }
 
-    /// The standards that size this nut; a T-slot nut has none and is
-    /// sized by its extrusion series instead.
+    /// The standards that size this nut.
     pub fn standards(self) -> &'static [NutTable] {
         match self {
             NutKind::Hex => &[standards::ISO_4032],
             NutKind::Thin => &[standards::ISO_4035],
             NutKind::Nyloc => &[standards::DIN_985],
             NutKind::Square => &[standards::DIN_562, standards::DIN_557],
-            NutKind::TSlot => &[],
         }
     }
 }
@@ -99,12 +86,11 @@ impl NutKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Nut {
     pub kind: NutKind,
-    /// The standard, or `Series 20` for a T-slot nut.
     pub standard: String,
     pub size: String,
     pub d: f64,
     pub pitch: f64,
-    /// Width across flats; a square nut's side; a T-nut's width.
+    /// Width across flats; a square nut's side.
     pub s: f64,
     /// Height over all.
     pub m: f64,
@@ -113,14 +99,6 @@ pub struct Nut {
     pub collar_d: f64,
     #[serde(default)]
     pub collar_h: f64,
-    /// A T-nut's neck (the part in the slot's opening), its height, and
-    /// the nut's length along the slot.
-    #[serde(default)]
-    pub neck: f64,
-    #[serde(default)]
-    pub neck_h: f64,
-    #[serde(default)]
-    pub tlength: f64,
     #[serde(default)]
     pub custom: bool,
     #[serde(default)]
@@ -131,10 +109,7 @@ impl Nut {
     pub fn new(kind: NutKind, size: &str, defaults: &Defaults) -> Nut {
         let mut nut = Nut {
             kind,
-            standard: match kind.standards().first() {
-                Some(t) => t.name.into(),
-                None => format!("Series {}", defaults.series),
-            },
+            standard: kind.standards()[0].name.into(),
             size: size.into(),
             d: 0.0,
             pitch: 0.0,
@@ -142,9 +117,6 @@ impl Nut {
             m: 0.0,
             collar_d: 0.0,
             collar_h: 0.0,
-            neck: 0.0,
-            neck_h: 0.0,
-            tlength: 0.0,
             custom: false,
             thread: defaults.thread,
         };
@@ -160,61 +132,23 @@ impl Nut {
             .or(tables.first())
     }
 
-    fn series(&self) -> &'static TNutRow {
-        standards::T_NUTS
-            .iter()
-            .find(|t| format!("Series {}", t.series) == self.standard)
-            .unwrap_or(&standards::T_NUTS[0])
-    }
-
     fn standards(&self) -> Vec<String> {
-        match self.kind {
-            NutKind::TSlot => standards::T_NUTS
-                .iter()
-                .map(|t| format!("Series {}", t.series))
-                .collect(),
-            _ => self
-                .kind
-                .standards()
-                .iter()
-                .map(|t| t.name.to_string())
-                .collect(),
-        }
+        self.kind
+            .standards()
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect()
     }
 
     fn sizes(&self) -> Vec<&'static str> {
-        match self.kind {
-            NutKind::TSlot => self.series().sizes.to_vec(),
-            _ => self
-                .table()
-                .map(|t| t.rows.iter().map(|r| r.size).collect())
-                .unwrap_or_default(),
-        }
+        self.table()
+            .map(|t| t.rows.iter().map(|r| r.size).collect())
+            .unwrap_or_default()
     }
 
     /// Take the dimensions of the size from the standard, the nearest
     /// size it has when it lacks the one named.
     pub fn refill(&mut self) {
-        if self.kind == NutKind::TSlot {
-            let series = *self.series();
-            self.standard = format!("Series {}", series.series);
-            if !series
-                .sizes
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case(&self.size))
-            {
-                self.size = series.sizes[0].into();
-            }
-            let (d, pitch) = standards::metric(&self.size).unwrap_or((3.0, 0.5));
-            self.d = d;
-            self.pitch = pitch;
-            self.s = series.width;
-            self.m = series.base_height + series.neck_height;
-            self.neck = series.neck;
-            self.neck_h = series.neck_height;
-            self.tlength = series.length;
-            return;
-        }
         let Some(table) = self.table() else {
             return;
         };
@@ -282,23 +216,7 @@ impl Part for Nut {
         if self.minor() <= 0.0 {
             return Some("The pitch is too coarse for the thread's diameter.".into());
         }
-        if self.kind == NutKind::TSlot {
-            if self.neck <= 0.0
-                || self.neck >= self.s
-                || self.neck_h <= 0.0
-                || self.neck_h >= self.m
-            {
-                return Some(
-                    "The neck must be narrower than the nut and shorter than its height.".into(),
-                );
-            }
-            if self.tlength <= 0.0 {
-                return Some("The length along the slot must be more than 0.".into());
-            }
-            if self.d >= self.neck {
-                return Some("The thread is wider than the neck.".into());
-            }
-        } else if self.s <= self.d {
+        if self.s <= self.d {
             return Some("The nut must be wider than its thread.".into());
         }
         if self.kind == NutKind::Nyloc
@@ -352,37 +270,6 @@ impl Part for Nut {
                 h,
                 BooleanOp::NewSolid,
             )],
-            NutKind::TSlot => {
-                let (w, nw, bh, nh, l) = (
-                    self.s / 2.0,
-                    self.neck / 2.0,
-                    self.m - self.neck_h,
-                    self.neck_h,
-                    self.tlength,
-                );
-                let tee = [
-                    [-w, 0.0],
-                    [w, 0.0],
-                    [w, bh],
-                    [nw, bh],
-                    [nw, bh + nh],
-                    [-nw, bh + nh],
-                    [-nw, bh],
-                    [-w, bh],
-                ];
-                // The section stands in XZ; it is extruded along -Y from
-                // y = l / 2, so the nut is centred on the origin.
-                let plane = printcad_bench_sdk::api::kernel_api::ProfilePlane {
-                    origin: [0.0, l / 2.0, 0.0],
-                    x_axis: [1.0, 0.0, 0.0],
-                    y_axis: [0.0, 0.0, 1.0],
-                    normal: [0.0, -1.0, 0.0],
-                };
-                vec![
-                    geom::extrude(plane, vec![geom::polygon(&tee)], l, BooleanOp::NewSolid),
-                    geom::extrude(geom::xy(-0.1), vec![bore], self.m + 0.2, BooleanOp::Cut),
-                ]
-            }
         };
         if self.thread {
             let top = self.m;
@@ -414,11 +301,7 @@ impl Part for Nut {
             ),
             choice(
                 "standard",
-                if self.kind == NutKind::TSlot {
-                    "Extrusion"
-                } else {
-                    "Standard"
-                },
+                "Standard",
                 &standards,
                 index_of(&standards, &self.standard),
             ),
@@ -430,7 +313,6 @@ impl Part for Nut {
             dims.push(number(ctx, "pitch", "Pitch", self.pitch, 0.05, 2));
             let width = match self.kind {
                 NutKind::Square => "Side",
-                NutKind::TSlot => "Width",
                 _ => "Across flats",
             };
             dims.push(number(ctx, "s", width, self.s, 0.1, 2));
@@ -453,26 +335,8 @@ impl Part for Nut {
                     2,
                 ));
             }
-            if self.kind == NutKind::TSlot {
-                dims.push(number(ctx, "neck", "Neck width", self.neck, 0.1, 2));
-                dims.push(number(ctx, "neck_h", "Neck height", self.neck_h, 0.1, 2));
-            }
         }
-        if self.kind == NutKind::TSlot {
-            dims.push(number(
-                ctx,
-                "tlength",
-                "Length along slot",
-                self.tlength,
-                0.1,
-                1,
-            ));
-        }
-        widgets.push(group(
-            "Dimensions",
-            self.custom || self.kind == NutKind::TSlot,
-            dims,
-        ));
+        widgets.push(group("Dimensions", self.custom, dims));
         let mut options = vec![toggle("thread", "Modelled thread", self.thread)];
         if self.thread {
             options.push(super::text("A modelled thread takes the kernel a while."));
@@ -490,9 +354,6 @@ impl Part for Nut {
             length("m", "Height"),
             length("collar_d", "Collar diameter"),
             length("collar_h", "Collar height"),
-            length("neck", "Neck width"),
-            length("neck_h", "Neck height"),
-            length("tlength", "Length"),
         ]
     }
 
@@ -525,20 +386,13 @@ impl Part for Nut {
                 "m" => self.m = *value,
                 "collar_d" => self.collar_d = *value,
                 "collar_h" => self.collar_h = *value,
-                "neck" => self.neck = *value,
-                "neck_h" => self.neck_h = *value,
-                "tlength" => self.tlength = *value,
                 _ => return false,
             },
             PanelEvent::Toggle { id, on } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {
-                        let keep = self.tlength;
                         self.refill();
-                        if self.kind == NutKind::TSlot && keep > 0.0 {
-                            self.tlength = keep;
-                        }
                     }
                 }
                 "thread" => self.thread = *on,
@@ -570,9 +424,6 @@ impl Part for Nut {
             nut.standard = found;
             nut.refill();
         }
-        if let Some(series) = arg_f64(args, "series") {
-            nut.standard = format!("Series {}", series as u32);
-        }
         nut.size = size.into();
         nut.refill();
         if !nut.size.eq_ignore_ascii_case(size) && arg_str(args, "size").is_some() {
@@ -585,16 +436,11 @@ impl Part for Nut {
             ("m", &mut nut.m),
             ("collar_d", &mut nut.collar_d),
             ("collar_h", &mut nut.collar_h),
-            ("neck", &mut nut.neck),
-            ("neck_h", &mut nut.neck_h),
         ] {
             if let Some(v) = arg_f64(args, key) {
                 *slot = v;
                 nut.custom = true;
             }
-        }
-        if let Some(v) = arg_f64(args, "length") {
-            nut.tlength = v;
         }
         if let Some(on) = arg_bool(args, "thread") {
             nut.thread = on;
@@ -610,83 +456,43 @@ impl Nut {
         let m = self.m;
         let r = self.d / 2.0;
         let wide = match self.kind {
-            NutKind::Square | NutKind::TSlot => self.s,
+            NutKind::Square => self.s,
             _ => across_corners(self.s),
         };
         let off = Sketch::standoff(wide.max(m));
         let w = wide / 2.0;
-        match self.kind {
-            NutKind::TSlot => {
-                let (nw, bh) = (self.neck / 2.0, m - self.neck_h);
-                s.poly(
-                    &[
-                        [-w, 0.0],
-                        [w, 0.0],
-                        [w, bh],
-                        [nw, bh],
-                        [nw, m],
-                        [-nw, m],
-                        [-nw, bh],
-                        [-w, bh],
-                    ],
-                    DiagramStroke::Outline,
-                    false,
-                );
-                s.width("s", -w, w, 0.0, -off, format!("w {}", fmt(self.s)));
-                s.width("neck", -nw, nw, m, off, format!("neck {}", fmt(self.neck)));
-                s.height("m", -w, 0.0, m, off, format!("h {}", fmt(m)));
-                s.height("neck_h", w, bh, m, -off, fmt(self.neck_h));
-                s.callout(
-                    "tlength",
-                    [w * 0.6, bh * 0.5],
-                    [w + off * 1.6, -off * 0.5],
-                    format!("L {}", fmt(self.tlength)),
-                );
-            }
-            _ => {
-                let h = self.body_height();
-                s.rect([-w, 0.0], [w, h]);
-                if self.kind != NutKind::Square {
-                    let a = w / 2.0;
-                    s.line(&[[-a, 0.0], [-a, h]], DiagramStroke::Outline);
-                    s.line(&[[a, 0.0], [a, h]], DiagramStroke::Outline);
-                }
-                if self.kind == NutKind::Nyloc {
-                    let c = self.collar_d / 2.0;
-                    s.rect([-c, h], [c, m]);
-                    s.height("collar_h", w, h, m, -off, fmt(self.collar_h));
-                    s.width("collar_d", -c, c, m, off, fmt(self.collar_d));
-                } else {
-                    let label = if self.kind == NutKind::Square {
-                        "a"
-                    } else {
-                        "s"
-                    };
-                    s.width("s", -w, w, m, off, format!("{label} {}", fmt(self.s)));
-                }
-                s.height("m", -w, 0.0, m, off, format!("m {}", fmt(m)));
-            }
+        let h = self.body_height();
+        s.rect([-w, 0.0], [w, h]);
+        if self.kind != NutKind::Square {
+            let a = w / 2.0;
+            s.line(&[[-a, 0.0], [-a, h]], DiagramStroke::Outline);
+            s.line(&[[a, 0.0], [a, h]], DiagramStroke::Outline);
         }
+        if self.kind == NutKind::Nyloc {
+            let c = self.collar_d / 2.0;
+            s.rect([-c, h], [c, m]);
+            s.height("collar_h", w, h, m, -off, fmt(self.collar_h));
+            s.width("collar_d", -c, c, m, off, fmt(self.collar_d));
+        } else {
+            let label = if self.kind == NutKind::Square {
+                "a"
+            } else {
+                "s"
+            };
+            s.width("s", -w, w, m, off, format!("{label} {}", fmt(self.s)));
+        }
+        s.height("m", -w, 0.0, m, off, format!("m {}", fmt(m)));
         s.hidden(&[[-r, 0.0], [-r, m]]);
         s.hidden(&[[r, 0.0], [r, m]]);
         s.axis(0.0, -off * 0.4, m + off * 0.4);
-        if self.kind != NutKind::TSlot {
-            s.width(
-                "d",
-                -r,
-                r,
-                0.0,
-                -off,
-                format!("{} × {}", self.size, fmt(self.pitch)),
-            );
-        } else {
-            s.callout(
-                "d",
-                [r, m * 0.5],
-                [-w - off * 1.4, m + off * 0.8],
-                format!("{} × {}", self.size, fmt(self.pitch)),
-            );
-        }
+        s.width(
+            "d",
+            -r,
+            r,
+            0.0,
+            -off,
+            format!("{} × {}", self.size, fmt(self.pitch)),
+        );
         s.finish("nut")
     }
 }
@@ -736,21 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn a_t_nut_follows_its_series_and_offers_its_threads() {
-        let mut nut = m3(NutKind::TSlot);
-        assert_eq!(nut.standard, "Series 20");
-        assert_eq!((nut.s, nut.neck, nut.m), (10.0, 6.0, 4.5));
-        assert_eq!(nut.sizes(), ["M3", "M4", "M5"]);
-        assert!(nut.apply(&PanelEvent::Choice {
-            id: "standard".into(),
-            index: 2,
-        }));
-        assert_eq!(nut.standard, "Series 40");
-        assert_eq!(nut.size, "M5", "M3 is not made for it");
-        assert_eq!(nut.ops().len(), 2);
-    }
-
-    #[test]
     fn a_square_nut_offers_two_standards() {
         let mut nut = Nut::new(NutKind::Square, "M6", &Defaults::default());
         assert_eq!(nut.m, 3.2);
@@ -769,12 +560,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!((nut.kind, nut.s, nut.m), (NutKind::Nyloc, 8.0, 5.0));
-        let nut = Nut::with_args(
-            &json!({"kind": "tslot", "series": 30, "size": "M6"}),
-            &Defaults::default(),
-        )
-        .unwrap();
-        assert_eq!((nut.standard.as_str(), nut.d), ("Series 30", 6.0));
         assert!(Nut::with_args(&json!({"kind": "wing"}), &Defaults::default()).is_err());
     }
 }

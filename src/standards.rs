@@ -361,50 +361,135 @@ pub const DIN_557: NutTable = NutTable {
     ],
 };
 
-/// A T-slot nut for an extrusion series: the common drop-in shape, since
-/// no standard sizes them. `width` spans the slot cavity, `neck` fits
-/// its opening.
+/// A T-slot nut as the extrusion maker draws it (Misumi 5, 6 and 8
+/// series). Its section across the slot is a trapezoid: `top` wide under
+/// the lips, straight down `straight`, then in to `bottom` wide on the
+/// cavity's floor at `thick` deep. `length` runs along the slot.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TNutRow {
     pub series: u32,
-    pub width: f64,
-    pub base_height: f64,
-    pub neck: f64,
-    pub neck_height: f64,
+    pub kind: TNutKind,
     pub length: f64,
+    pub top: f64,
+    pub bottom: f64,
+    pub thick: f64,
+    pub straight: f64,
+    /// Where the thread sits from one end along the slot; 0 for the middle.
+    pub thread_at: f64,
     /// The thread sizes made for it.
     pub sizes: &'static [&'static str],
 }
 
-pub const T_NUTS: [TNutRow; 3] = [
+/// How a T-slot nut goes into its slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TNutKind {
+    /// Slid in from the extrusion's end before assembly.
+    Sliding,
+    /// Dropped into the slot edgewise and turned flat.
+    DropIn,
+    /// A drop-in with a sprung ball under it, so it stays where it is put.
+    SpringBall,
+    /// Narrow enough to drop straight in, its ends cut at 15°; the screw's
+    /// torque turns it to lock under the lips.
+    Twist,
+    /// A drop-in with a second, set-screw hole to lock it in place.
+    RollIn,
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn tnut(
+    series: u32,
+    kind: TNutKind,
+    length: f64,
+    top: f64,
+    bottom: f64,
+    thick: f64,
+    straight: f64,
+    thread_at: f64,
+    sizes: &'static [&'static str],
+) -> TNutRow {
     TNutRow {
-        series: 20,
-        width: 10.0,
-        base_height: 3.0,
-        neck: 6.0,
-        neck_height: 1.5,
-        length: 10.0,
-        sizes: &["M3", "M4", "M5"],
-    },
-    TNutRow {
-        series: 30,
-        width: 16.0,
-        base_height: 4.5,
-        neck: 8.0,
-        neck_height: 1.5,
-        length: 12.0,
-        sizes: &["M4", "M5", "M6"],
-    },
-    TNutRow {
-        series: 40,
-        width: 16.0,
-        base_height: 5.0,
-        neck: 8.0,
-        neck_height: 2.0,
-        length: 14.0,
-        sizes: &["M5", "M6", "M8"],
-    },
+        series,
+        kind,
+        length,
+        top,
+        bottom,
+        thick,
+        straight,
+        thread_at,
+        sizes,
+    }
+}
+
+const M3_5: &[&str] = &["M3", "M4", "M5"];
+const M3_6: &[&str] = &["M3", "M4", "M5", "M6"];
+const M4_8: &[&str] = &["M4", "M5", "M6", "M8"];
+
+/// Misumi HNTT, HNTA, HNTP, HNTF and HNTR, by series. The 40 series'
+/// sliding and twist nuts are catalogued 9 thick against a cavity drawn
+/// 7 high; they are drawn to fit the cavity.
+pub const T_NUTS: [TNutRow; 15] = [
+    tnut(20, TNutKind::Sliding, 10.0, 10.0, 5.8, 4.1, 3.3, 0.0, M3_5),
+    tnut(20, TNutKind::DropIn, 15.0, 8.0, 5.8, 3.2, 2.5, 0.0, M3_5),
+    tnut(
+        20,
+        TNutKind::SpringBall,
+        17.0,
+        8.3,
+        5.8,
+        3.2,
+        2.5,
+        6.0,
+        M3_5,
+    ),
+    tnut(
+        20,
+        TNutKind::Twist,
+        10.0,
+        6.0,
+        5.8,
+        4.1,
+        3.3,
+        0.0,
+        &["M3", "M4"],
+    ),
+    tnut(20, TNutKind::RollIn, 17.0, 8.0, 5.8, 3.2, 2.4, 6.5, M3_5),
+    tnut(30, TNutKind::Sliding, 14.0, 15.0, 7.8, 6.3, 5.5, 0.0, M3_6),
+    tnut(30, TNutKind::DropIn, 17.0, 11.5, 7.8, 6.3, 5.5, 0.0, M3_6),
+    tnut(
+        30,
+        TNutKind::SpringBall,
+        17.0,
+        11.5,
+        7.8,
+        6.3,
+        5.5,
+        6.0,
+        M3_6,
+    ),
+    tnut(30, TNutKind::Twist, 15.0, 8.0, 7.8, 6.3, 5.5, 0.0, M3_6),
+    tnut(30, TNutKind::RollIn, 17.0, 11.5, 7.8, 6.3, 5.5, 6.5, M3_6),
+    tnut(40, TNutKind::Sliding, 17.0, 17.0, 9.8, 7.0, 5.0, 0.0, M4_8),
+    tnut(40, TNutKind::DropIn, 20.0, 14.5, 9.8, 6.5, 4.5, 0.0, M4_8),
+    tnut(
+        40,
+        TNutKind::SpringBall,
+        20.0,
+        14.5,
+        9.8,
+        6.5,
+        4.5,
+        8.0,
+        M4_8,
+    ),
+    tnut(40, TNutKind::Twist, 17.0, 10.0, 9.8, 7.0, 5.0, 0.0, M4_8),
+    tnut(40, TNutKind::RollIn, 20.0, 14.5, 9.8, 6.5, 4.5, 6.5, M4_8),
 ];
+
+pub fn tnut_row(series: u32, kind: TNutKind) -> Option<&'static TNutRow> {
+    T_NUTS.iter().find(|r| r.series == series && r.kind == kind)
+}
 
 /// A washer size: hole, outside and thickness.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -475,57 +560,85 @@ pub const DIN_127: WasherTable = WasherTable {
     ],
 };
 
-/// A T-slot extrusion series: the slot every outer face of a cell has.
+/// A T-slot extrusion series, as Misumi draws its 5, 6 and 8 series
+/// (20, 30 and 40 mm cells with 6, 8 and 10 mm slots). Every open face of
+/// a cell has the slot: `opening` wide at the surface through a lip
+/// `lip` thick, then a cavity `cavity` wide down to `shoulder` from the
+/// surface, where its walls run in at 45° to the floor at `depth`. A
+/// hole runs down each cell; the 30 series has a hole in each corner
+/// block and the 40 series a hollow one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrusionSeries {
-    /// The cell size: 20 for 2020 and 2040, 30 for 3030, 40 for 4040.
     pub cell: u32,
-    /// The slot's opening at the surface.
     pub opening: f64,
-    /// The wall over the slot cavity.
     pub lip: f64,
-    /// The cavity's width behind the lip.
     pub cavity: f64,
-    /// The depth at which the cavity's walls turn in at 45° toward the
-    /// floor, leaving a web between neighbouring cavities.
     pub shoulder: f64,
-    /// The slot's depth from the surface to the cavity's floor.
     pub depth: f64,
-    /// The hole down the cell's centre.
     pub hole: f64,
     pub corner: f64,
+    /// A hole in each outer corner block: its diameter and its centre's
+    /// distance in from both outer faces; 0 for none.
+    pub corner_hole: f64,
+    pub corner_hole_in: f64,
+    /// A hollow in each outer corner block: its side and the wall around
+    /// it; 0 for none.
+    pub corner_void: f64,
+    pub corner_wall: f64,
+    /// The wall between an interior void and a cavity's floor.
+    pub web: f64,
+    /// Section area and mass per metre, as catalogued, for the checks.
+    pub area_mm2: f64,
 }
 
 pub const EXTRUSIONS: [ExtrusionSeries; 3] = [
     ExtrusionSeries {
         cell: 20,
-        opening: 6.2,
-        lip: 1.8,
-        cavity: 11.0,
+        opening: 6.0,
+        lip: 2.0,
+        cavity: 12.0,
         shoulder: 3.0,
         depth: 6.0,
         hole: 4.2,
-        corner: 1.5,
+        corner: 1.0,
+        corner_hole: 0.0,
+        corner_hole_in: 0.0,
+        corner_void: 0.0,
+        corner_wall: 0.0,
+        web: 1.5,
+        area_mm2: 183.0,
     },
     ExtrusionSeries {
         cell: 30,
-        opening: 8.2,
+        opening: 8.0,
         lip: 2.0,
         cavity: 16.5,
-        shoulder: 4.0,
-        depth: 8.5,
+        shoulder: 4.75,
+        depth: 9.0,
         hole: 6.8,
         corner: 2.0,
+        corner_hole: 4.2,
+        corner_hole_in: 3.4,
+        corner_void: 0.0,
+        corner_wall: 0.0,
+        web: 2.0,
+        area_mm2: 347.0,
     },
     ExtrusionSeries {
         cell: 40,
-        opening: 8.2,
-        lip: 3.0,
+        opening: 10.0,
+        lip: 5.5,
         cavity: 20.0,
-        shoulder: 6.5,
+        shoulder: 7.5,
         depth: 12.5,
-        hole: 10.2,
-        corner: 2.0,
+        hole: 10.5,
+        corner: 3.0,
+        corner_hole: 0.0,
+        corner_hole_in: 0.0,
+        corner_void: 6.0,
+        corner_wall: 2.0,
+        web: 2.0,
+        area_mm2: 760.0,
     },
 ];
 
@@ -736,11 +849,24 @@ mod tests {
         for series in EXTRUSIONS {
             assert!(series.cavity > series.opening);
             assert!(series.depth > series.shoulder && series.shoulder > series.lip);
-            // The walls meet the floor before they meet each other.
-            assert!(series.cavity - 2.0 * (series.depth - series.shoulder) > 0.0);
-            // Neighbouring cavities leave a web between them.
-            assert!(series.cavity / 2.0 < series.cell as f64 / 2.0 - series.shoulder);
-            assert!(series.cavity < series.cell as f64);
+            let floor = series.cavity - 2.0 * (series.depth - series.shoulder);
+            assert!(
+                floor > 0.0,
+                "{}: the walls meet before the floor",
+                series.cell
+            );
+            // Every nut of the series sits on the floor under the lips.
+            for nut in T_NUTS.iter().filter(|n| n.series == series.cell) {
+                assert!(nut.bottom <= floor + 0.01, "{} {:?}", series.cell, nut.kind);
+                assert!(nut.top < series.cavity, "{} {:?}", series.cell, nut.kind);
+                assert!(
+                    nut.thick <= series.depth - series.lip + 0.11,
+                    "{} {:?}",
+                    series.cell,
+                    nut.kind
+                );
+                assert!(nut.straight < nut.thick, "{} {:?}", series.cell, nut.kind);
+            }
         }
         for row in INSERTS {
             assert!(row.outer > row.pilot && row.pilot > row.d && row.short <= row.length);

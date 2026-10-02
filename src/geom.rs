@@ -313,6 +313,24 @@ pub fn internal_thread(d: f64, minor: f64, pitch: f64, z_top: f64, length: f64) 
     )
 }
 
+/// [`internal_thread`] about `centre` in the XY plane rather than the
+/// origin.
+pub fn internal_thread_at(
+    d: f64,
+    minor: f64,
+    pitch: f64,
+    z_top: f64,
+    length: f64,
+    centre: [f64; 2],
+) -> SolidOp {
+    let mut op = internal_thread(d, minor, pitch, z_top, length);
+    if let SolidOp::Sweep { profile, .. } = &mut op {
+        profile.plane.origin[0] = centre[0];
+        profile.plane.origin[1] = centre[1];
+    }
+    op
+}
+
 /// The depth of an ISO thread as a share of its pitch: 5/8 of the sharp
 /// profile's height, `H = 0.866 p`, between the crest and root flats.
 pub const THREAD_DEPTH: f64 = 0.5413;
