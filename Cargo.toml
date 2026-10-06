@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 # The SDK comes from the printCAD repository; to build against a local
 # printCAD, point this at the checkout's `sdk/printcad-bench-sdk` instead.
-printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", branch = "master" }
+printcad-bench-sdk = { git = "https://github.com/gilbertorconde/printCAD", tag = "v0.6.0" }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]
