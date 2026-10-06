@@ -85,9 +85,10 @@ kernel builds them to `/tmp/hardware-<part>.svg`, to look at. Its
 intersects each pair, listing the features that share volume: a hole cut
 through a ball shows up there before it shows up in a picture.
 
-The SDK comes from the printCAD repository (`sdk/printcad-bench-sdk` on
-master). To build against a local printCAD, point the dependency in
-`Cargo.toml` at the checkout's path instead.
+The SDK is [`printcad-bench-sdk`](https://crates.io/crates/printcad-bench-sdk)
+on crates.io, `0.1` for the `printcad:workbench@0.1` contract. To build
+against a local printCAD, add a `[patch.crates-io]` naming the checkout's
+`sdk/printcad-bench-sdk`, `crates/bench_api` and `crates/kernel_api`.
 
 ## Release it
 

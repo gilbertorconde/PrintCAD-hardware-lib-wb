@@ -13,7 +13,7 @@ publish = false
 
 [dependencies]
 printcad-bench-sdk = { path = "../../../printCAD/sdk/printcad-bench-sdk" }
-kernel_api = { path = "../../../printCAD/crates/kernel_api" }
+kernel_api = { package = "printcad-kernel-api", path = "../../../printCAD/crates/kernel_api" }
 kernel_ogeom = { path = "../../../printCAD/crates/kernel_ogeom" }
 serde = { version = "1", features = ["derive"] }
 
