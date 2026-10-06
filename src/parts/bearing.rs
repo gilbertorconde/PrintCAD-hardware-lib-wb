@@ -45,11 +45,19 @@ impl BearingKind {
         }
     }
 
+    /// The word a command names the kind by.
+    pub fn word(self) -> &'static str {
+        match self {
+            BearingKind::Ball => "ball",
+            BearingKind::Linear => "linear",
+        }
+    }
+
     pub fn named(name: &str) -> Option<BearingKind> {
         BearingKind::ALL.into_iter().find(|k| {
-            k.tool().eq_ignore_ascii_case(name)
+            k.word().eq_ignore_ascii_case(name)
+                || k.tool().eq_ignore_ascii_case(name)
                 || k.name().eq_ignore_ascii_case(name)
-                || (name.eq_ignore_ascii_case("linear") && *k == BearingKind::Linear)
         })
     }
 
@@ -353,5 +361,20 @@ mod tests {
             index: 1,
         }));
         assert_eq!(bearing.name, "LM6UU");
+    }
+
+    #[test]
+    fn a_kind_is_named_by_its_word_tool_or_name() {
+        for kind in BearingKind::ALL {
+            for name in [kind.word(), kind.tool(), kind.name()] {
+                assert_eq!(BearingKind::named(&name.to_uppercase()), Some(kind));
+            }
+        }
+        let defaults = Defaults::default();
+        let ball = Bearing::with_args(&json!({"kind": "ball", "name": "608"}), &defaults).unwrap();
+        assert_eq!(ball.kind, BearingKind::Ball);
+        let linear = Bearing::with_args(&json!({"kind": "linear"}), &defaults).unwrap();
+        assert_eq!(linear.kind, BearingKind::Linear);
+        assert!(Bearing::with_args(&json!({"kind": "roller"}), &defaults).is_err());
     }
 }
