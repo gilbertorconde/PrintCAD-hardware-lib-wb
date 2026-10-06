@@ -1,6 +1,6 @@
 id = "io.github.gilbertorconde.hardware"
 name = "Hardware"
-version = "0.4.2"
+version = "0.4.3"
 api = "printcad:workbench@0.1"
 description = "Standard hardware for printed designs: screws, nuts, washers, T-slot extrusions and nuts, heat-set inserts, standoffs, bearings, magnets, rods, springs and gears, each sized from its standard"
 feature_kinds = [
