@@ -720,6 +720,7 @@ impl Bench for HardwareBench {
                     ],
                     returns: "{body, feature}".into(),
                     read_only: false,
+                    ..Default::default()
                 },
                 Command {
                     id: id(CATALOG),
@@ -727,9 +728,15 @@ impl Bench for HardwareBench {
                     params: Vec::new(),
                     returns: "{screw, nut, tnut, washer, extrusion, insert, holes, bearing, magnet, rod, spring, standoff, gear}".into(),
                     read_only: true,
+                    ..Default::default()
                 },
             ],
             length_keys: LENGTH_KEYS.map(String::from).to_vec(),
+            bought_kinds: Family::ALL
+                .into_iter()
+                .filter(|f| f.bought())
+                .map(Family::kind)
+                .collect(),
             ..Default::default()
         }
     }
@@ -1096,6 +1103,17 @@ mod tests {
             assert!(command.id.starts_with(PACKAGE));
         }
         assert!(reg.commands.iter().any(|c| c.read_only));
+    }
+
+    /// Catalog hardware is declared bought, so the parts list marks it
+    /// and exports leave it out; gears, often printed, are not.
+    #[test]
+    fn hardware_but_gears_is_declared_bought() {
+        let bought = HardwareBench::default().describe().bought_kinds;
+        assert!(bought.contains(&Family::Screw.kind()));
+        assert!(bought.contains(&Family::Bearing.kind()));
+        assert!(!bought.contains(&Family::Gear.kind()));
+        assert_eq!(bought.len(), Family::ALL.len() - 1);
     }
 
     #[test]

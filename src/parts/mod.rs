@@ -156,6 +156,12 @@ impl Family {
         }
     }
 
+    /// Bought rather than printed: everything but gears, which are as
+    /// often printed as bought.
+    pub fn bought(self) -> bool {
+        self != Family::Gear
+    }
+
     /// The feature kind, `io.github….hardware.screw`.
     pub fn kind(self) -> String {
         format!("{PACKAGE}.{}", self.name())
