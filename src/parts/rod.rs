@@ -7,8 +7,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of, length,
-    note, number, text, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of,
+    length, note, number, text, toggle,
 };
 use crate::diagram::{Sketch, shank};
 use crate::geom::{self, revolve};
@@ -143,6 +143,16 @@ impl Rod {
         digits.parse().ok()
     }
 
+    /// The chamfer at each end.
+    fn chamfer(&self) -> f64 {
+        let (r, l) = (self.d / 2.0, self.length);
+        match self.kind {
+            RodKind::Dowel => (0.15 * self.d).min(l / 4.0),
+            RodKind::Threaded | RodKind::LeadScrew => (0.6 * self.pitch).min(r / 2.0).min(l / 4.0),
+            RodKind::Shaft => (0.5f64).min(r / 4.0).min(l / 4.0),
+        }
+    }
+
     pub fn refill(&mut self) {
         let sizes = self.kind.sizes();
         let index = sizes
@@ -235,12 +245,7 @@ impl Part for Rod {
     }
 
     fn ops(&self) -> Vec<SolidOp> {
-        let (r, l) = (self.d / 2.0, self.length);
-        let c = match self.kind {
-            RodKind::Dowel => (0.15 * self.d).min(l / 4.0),
-            RodKind::Threaded | RodKind::LeadScrew => (0.6 * self.pitch).min(r / 2.0).min(l / 4.0),
-            RodKind::Shaft => (0.5f64).min(r / 4.0).min(l / 4.0),
-        };
+        let (r, l, c) = (self.d / 2.0, self.length, self.chamfer());
         let mut ops = vec![revolve(
             &[
                 [0.0, 0.0],
@@ -406,6 +411,35 @@ impl Part for Rod {
             rod.thread = on;
         }
         Ok(rod)
+    }
+
+    /// A threaded rod's or a lead screw's thread its whole length, unless
+    /// it is modelled; a lead screw's drawn a turn to its lead.
+    fn threads(&self) -> Vec<Thread> {
+        if self.thread {
+            return Vec::new();
+        }
+        let (pitch, designation) = match self.kind {
+            RodKind::Threaded => (
+                self.pitch,
+                standards::metric_designation(self.d, self.pitch),
+            ),
+            RodKind::LeadScrew => (
+                self.lead,
+                standards::trapezoidal_designation(self.d, self.pitch, self.lead),
+            ),
+            RodKind::Shaft | RodKind::Dowel => return Vec::new(),
+        };
+        let c = self.chamfer();
+        vec![Thread::about_z(
+            self.d / 2.0,
+            c,
+            true,
+            self.length - 2.0 * c,
+            pitch,
+            0.0,
+            designation,
+        )]
     }
 }
 

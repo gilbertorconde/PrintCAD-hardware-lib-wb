@@ -92,6 +92,37 @@ pub fn size_name(d: f64) -> String {
     format!("M{}", crate::geom::trim(d))
 }
 
+/// What a metric thread is called: `M6` at its coarse pitch, `M8x1` at
+/// any other, as ISO 261 writes them.
+pub fn metric_designation(d: f64, pitch: f64) -> String {
+    let name = size_name(d);
+    if (pitch - coarse_pitch(d)).abs() < 1e-6 {
+        name
+    } else {
+        format!("{name}x{}", crate::geom::trim(pitch))
+    }
+}
+
+/// What an inch thread sized `size` (`1/4-20`, `#10-24`) is called at
+/// `pitch`: its size and threads per inch, `1/4-20` or `1/4-28`, as
+/// printCAD's hole tables write them, so a screw and the hole it fits count
+/// as one thread in the parts list.
+pub fn inch_designation(size: &str, pitch: f64) -> String {
+    let (base, _) = size.split_once('-').unwrap_or((size, ""));
+    format!("{base}-{}", (IN / pitch).round())
+}
+
+/// What a trapezoidal lead screw is called (ISO 2904): `Tr8x2`, and
+/// `Tr8x8 (P2)` for one of several starts.
+pub fn trapezoidal_designation(d: f64, pitch: f64, lead: f64) -> String {
+    let trim = crate::geom::trim;
+    if (lead - pitch).abs() < 1e-6 {
+        format!("Tr{}x{}", trim(d), trim(pitch))
+    } else {
+        format!("Tr{}x{} (P{})", trim(d), trim(lead), trim(pitch))
+    }
+}
+
 /// The holes made for a thread: the clearance holes of ISO 273 in its
 /// three series, and the tap drill (the diameter less the pitch).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1239,6 +1270,19 @@ mod tests {
         assert_eq!(metric("M3"), Some((3.0, 0.5)));
         assert_eq!(metric("m8"), Some((8.0, 1.25)));
         assert_eq!(metric("M7"), None);
+    }
+
+    #[test]
+    fn threads_are_called_as_their_standards_write_them() {
+        assert_eq!(metric_designation(6.0, 1.0), "M6");
+        assert_eq!(metric_designation(2.5, 0.45), "M2.5");
+        assert_eq!(metric_designation(8.0, 1.0), "M8x1");
+        assert_eq!(metric_designation(6.0, 0.75), "M6x0.75");
+        assert_eq!(inch_designation("1/4-20", IN / 20.0), "1/4-20");
+        assert_eq!(inch_designation("#4-40", IN / 40.0), "#4-40");
+        assert_eq!(inch_designation("1/4-20", IN / 28.0), "1/4-28");
+        assert_eq!(trapezoidal_designation(8.0, 2.0, 2.0), "Tr8x2");
+        assert_eq!(trapezoidal_designation(8.0, 2.0, 8.0), "Tr8x8 (P2)");
     }
 
     #[test]

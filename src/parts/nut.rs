@@ -7,8 +7,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of, length,
-    note, number, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of,
+    length, note, number, toggle,
 };
 use crate::diagram::Sketch;
 use std::f64::consts::PI;
@@ -627,6 +627,25 @@ impl Part for Nut {
             nut.thread = on;
         }
         Ok(nut)
+    }
+
+    /// The thread up the bore from the bottom, unless it is modelled; a
+    /// lock nut's stops under its nylon collar.
+    fn threads(&self) -> Vec<Thread> {
+        if self.thread {
+            return Vec::new();
+        }
+        let h = self.body_height();
+        let length = if self.kind == NutKind::Nyloc { h } else { 0.0 };
+        vec![Thread::about_z(
+            self.minor() / 2.0,
+            0.0,
+            true,
+            h,
+            self.pitch,
+            length,
+            standards::metric_designation(self.d, self.pitch),
+        )]
     }
 }
 

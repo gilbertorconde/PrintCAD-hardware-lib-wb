@@ -14,6 +14,7 @@ pub mod parts;
 pub mod standards;
 
 mod cases;
+mod threads;
 
 use cases::cases;
 use kernel_api::TessellationSettings;
@@ -90,8 +91,17 @@ fn main() {
                 if result.mesh.indices.is_empty() {
                     problems.push("no mesh".into());
                 }
-                let outcome = if problems.is_empty() {
+                let mut landed = Vec::new();
+                for thread in case.part.threads() {
+                    match threads::land(&result.mesh, &thread) {
+                        Ok(text) => landed.push(text),
+                        Err(e) => problems.push(e),
+                    }
+                }
+                let outcome = if problems.is_empty() && landed.is_empty() {
                     "ok".to_string()
+                } else if problems.is_empty() {
+                    format!("ok; threads: {}", landed.join(", "))
                 } else {
                     failed += 1;
                     format!("FAILED: {}", problems.join("; "))

@@ -87,6 +87,51 @@ pub trait Part: Clone + Serialize + DeserializeOwned {
     fn apply(&mut self, event: &PanelEvent) -> bool;
     /// One from a command's arguments, the rest from `defaults`.
     fn with_args(args: &Value, defaults: &Defaults) -> Result<Self, String>;
+    /// The threads it carries that are drawn rather than cut: every
+    /// thread whose groove is not modelled.
+    fn threads(&self) -> Vec<Thread> {
+        Vec::new()
+    }
+}
+
+/// A thread drawn on a round face of the part: a bore's (inside) or a
+/// shank's (outside), the host telling which by the way the face looks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Thread {
+    /// A point on the face, in the body's frame, near the end the thread
+    /// runs from.
+    pub point: [f64; 3],
+    /// mm a turn: the pitch, a multi-start thread's lead.
+    pub pitch: f64,
+    /// How far it runs from that end; 0 for the whole face.
+    pub length: f64,
+    /// What it is called: `M6`, `M8x1`, `1/4-20`, `Tr8x8 (P2)`.
+    pub designation: String,
+}
+
+impl Thread {
+    /// A thread on a round face about Z of `radius`, running up from `z0`
+    /// (or down from it, `up` false) for `length`, 0 the whole face. The
+    /// point stands a pitch in from that end, or a quarter of the way
+    /// along a short face of `span`, clear of the faces beside it.
+    pub fn about_z(
+        radius: f64,
+        z0: f64,
+        up: bool,
+        span: f64,
+        pitch: f64,
+        length: f64,
+        designation: String,
+    ) -> Thread {
+        let into = pitch.min(span / 4.0);
+        let z = if up { z0 + into } else { z0 - into };
+        Thread {
+            point: [radius, 0.0, z],
+            pitch,
+            length,
+            designation,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,6 +346,10 @@ impl Hardware {
 
     pub fn apply(&mut self, event: &PanelEvent) -> bool {
         each!(self, p => p.apply(event))
+    }
+
+    pub fn threads(&self) -> Vec<Thread> {
+        each!(self, p => p.threads())
     }
 }
 

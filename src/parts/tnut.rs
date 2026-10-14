@@ -14,8 +14,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of, length,
-    note, number, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of,
+    length, note, number, toggle,
 };
 use crate::diagram::Sketch;
 use crate::geom;
@@ -607,6 +607,32 @@ impl Part for TNut {
             nut.thread = on;
         }
         Ok(nut)
+    }
+
+    /// The thread down its bore from the top, unless it is modelled, and
+    /// a roll-in nut's M4 set screw hole.
+    fn threads(&self) -> Vec<Thread> {
+        let height = self.height();
+        let into = |pitch: f64| height - pitch.min(height / 4.0);
+        let mut threads = Vec::new();
+        if !self.thread {
+            threads.push(Thread {
+                point: [self.minor() / 2.0, self.thread_y(), into(self.pitch)],
+                pitch: self.pitch,
+                length: 0.0,
+                designation: standards::metric_designation(self.d, self.pitch),
+            });
+        }
+        if self.kind == TNutKind::RollIn {
+            let pitch = standards::coarse_pitch(4.0);
+            threads.push(Thread {
+                point: [3.3 / 2.0, self.set_screw_y(), into(pitch)],
+                pitch,
+                length: 0.0,
+                designation: standards::metric_designation(4.0, pitch),
+            });
+        }
+        threads
     }
 }
 

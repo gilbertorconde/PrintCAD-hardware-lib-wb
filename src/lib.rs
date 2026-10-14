@@ -772,6 +772,7 @@ impl Bench for HardwareBench {
             .map(|history| {
                 let mut ops = Vec::new();
                 let mut op_features = Vec::new();
+                let mut threads = Vec::new();
                 for (i, node) in history.features.iter().enumerate() {
                     let fail = |message: String| Rebuild {
                         body: history.body.clone(),
@@ -779,6 +780,7 @@ impl Bench for HardwareBench {
                             feature: Some(node.id.clone()),
                             message,
                         },
+                        threads: Vec::new(),
                     };
                     let Some(part) = Hardware::read(&node.kind, &node.data) else {
                         return fail("The part's data does not read.".into());
@@ -796,6 +798,14 @@ impl Bench for HardwareBench {
                         ops.push(op);
                         op_features.push(node.id.clone());
                     }
+                    threads.extend(part.threads().into_iter().map(|t| CosmeticThread {
+                        feature: node.id.clone(),
+                        point: t.point,
+                        pitch: t.pitch,
+                        length: t.length,
+                        designation: Some(t.designation),
+                        ..Default::default()
+                    }));
                 }
                 Rebuild {
                     body: history.body,
@@ -804,6 +814,7 @@ impl Bench for HardwareBench {
                     } else {
                         Plan::Ops { ops, op_features }
                     },
+                    threads,
                 }
             })
             .collect()
@@ -1157,6 +1168,195 @@ mod tests {
             }],
         });
         assert!(matches!(&plans[0].plan, Plan::Error { feature: Some(f), .. } if f == "two"));
+    }
+
+    /// The plan for one part on its own body, made by `family`'s command
+    /// with `args`.
+    fn plan_of(family: Family, args: Value) -> Rebuild {
+        let part = Hardware::with_args(family, &args, &Defaults::default()).unwrap();
+        let node = Node {
+            id: "f".into(),
+            kind: part.kind(),
+            name: part.label(),
+            body: Some("b".into()),
+            data: part.to_value(),
+            visible: true,
+            made_by: None,
+            deps: Vec::new(),
+            seq: 0,
+        };
+        let mut plans = HardwareBench::default().rebuild(RebuildRequest {
+            bodies: vec![BodyHistory {
+                body: "b".into(),
+                features: vec![node],
+            }],
+        });
+        assert!(matches!(plans[0].plan, Plan::Ops { .. }));
+        plans.remove(0)
+    }
+
+    fn radius(point: [f64; 3]) -> f64 {
+        point[0].hypot(point[1])
+    }
+
+    /// A screw's thread is drawn outside its shank, from above the tip's
+    /// chamfer to where the standard's thread length ends.
+    #[test]
+    fn a_screw_declares_its_thread_on_the_shank() {
+        let plan = plan_of(Family::Screw, json!({"size": "M6", "length": 30}));
+        let [thread] = plan.threads.as_slice() else {
+            panic!("one thread: {:?}", plan.threads);
+        };
+        assert_eq!(thread.feature, "f");
+        assert_eq!(thread.designation.as_deref(), Some("M6"));
+        assert_eq!(thread.pitch, 1.0);
+        assert!(!thread.left_handed);
+        assert!((radius(thread.point) - 3.0).abs() < 1e-9, "on the shank");
+        let tip = 0.6;
+        assert!(
+            (thread.point[2] - (-30.0 + tip + 1.0)).abs() < 1e-9,
+            "a pitch up the face"
+        );
+        // b = 2d + 12 from the tip, the face starting above the chamfer.
+        assert!((-30.0 + tip + thread.length - (-30.0 + 24.0)).abs() < 1e-9);
+
+        let fully = plan_of(Family::Screw, json!({"head": "set_screw", "size": "M4"}));
+        assert_eq!(fully.threads[0].length, 0.0, "a set screw's whole shank");
+    }
+
+    /// A nut's thread is drawn inside its bore, at the tap drill, the
+    /// whole height; a lock nut's stops under its collar.
+    #[test]
+    fn a_nut_declares_its_thread_in_the_bore() {
+        let plan = plan_of(Family::Nut, json!({"size": "M5"}));
+        let [thread] = plan.threads.as_slice() else {
+            panic!("one thread: {:?}", plan.threads);
+        };
+        assert_eq!(thread.designation.as_deref(), Some("M5"));
+        assert_eq!(thread.pitch, 0.8);
+        assert_eq!(thread.length, 0.0);
+        let minor = standards::internal_minor(5.0, 0.8);
+        assert!(
+            (radius(thread.point) - minor / 2.0).abs() < 1e-9,
+            "in the bore"
+        );
+        assert!(thread.point[2] > 0.0 && thread.point[2] <= 0.8);
+
+        let lock = plan_of(Family::Nut, json!({"kind": "nyloc", "size": "M5"}));
+        let Hardware::Nut(nut) = Hardware::with_args(
+            Family::Nut,
+            &json!({"kind": "nyloc", "size": "M5"}),
+            &Defaults::default(),
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        assert!(lock.threads[0].length > 0.0 && lock.threads[0].length < nut.m);
+    }
+
+    /// A thread cut into the part is not drawn over as well.
+    #[test]
+    fn a_modelled_thread_is_not_declared() {
+        for family in [Family::Screw, Family::Nut, Family::Insert] {
+            let plan = plan_of(family, json!({"size": "M4", "thread": true}));
+            assert!(plan.threads.is_empty(), "{}", family.name());
+        }
+    }
+
+    /// Each thread is called as its standard writes it: a fine pitch
+    /// after the size, an inch screw by its count and series, a lead
+    /// screw by its lead and pitch, drawn a turn to its lead.
+    #[test]
+    fn threads_carry_their_designations() {
+        let designation = |family, args| {
+            let plan = plan_of(family, args);
+            plan.threads
+                .iter()
+                .map(|t| (t.designation.clone().unwrap(), t.pitch))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            designation(Family::Screw, json!({"size": "M8", "pitch": 1.0})),
+            [("M8x1".into(), 1.0)]
+        );
+        assert_eq!(
+            designation(Family::Screw, json!({"standard": "ASME", "size": "1/4-20"})),
+            [("1/4-20".into(), 25.4 / 20.0)]
+        );
+        assert_eq!(
+            designation(
+                Family::Rod,
+                json!({"kind": "lead_screw", "size": "T8 (lead 8)"})
+            ),
+            [("Tr8x8 (P2)".into(), 8.0)]
+        );
+        assert_eq!(
+            designation(Family::Rod, json!({"kind": "threaded_rod", "size": "M10"})),
+            [("M10".into(), 1.5)]
+        );
+        assert_eq!(
+            designation(Family::Insert, json!({"size": "M3"})),
+            [("M3".into(), 0.5)]
+        );
+        assert_eq!(
+            designation(Family::TNut, json!({"kind": "roll_in", "size": "M5"})),
+            [("M5".into(), 0.8), ("M4".into(), 0.7)],
+            "a roll-in nut's set screw hole is tapped M4"
+        );
+    }
+
+    /// A male-female standoff is threaded twice: its bore below, at the
+    /// tap drill, and its stud above, at the thread's diameter.
+    #[test]
+    fn a_male_female_standoff_declares_its_bore_and_its_stud() {
+        let plan = plan_of(
+            Family::Standoff,
+            json!({"size": "M3", "length": 10, "stud": 6}),
+        );
+        let [bore, stud] = plan.threads.as_slice() else {
+            panic!("two threads: {:?}", plan.threads);
+        };
+        assert!((radius(bore.point) - standards::internal_minor(3.0, 0.5) / 2.0).abs() < 1e-9);
+        assert!(bore.point[2] < 10.0);
+        assert!((radius(stud.point) - 1.5).abs() < 1e-9);
+        assert!(stud.point[2] > 10.0 && stud.point[2] < 16.0);
+        assert_eq!(stud.designation.as_deref(), Some("M3"));
+    }
+
+    /// Every tool's part that has a thread declares it, at a point within
+    /// the part's run along its axis; the rest declare none.
+    #[test]
+    fn every_threaded_tool_declares_its_threads() {
+        let defaults = Defaults::default();
+        for tool in TOOLS {
+            let part = (tool.seed)(&defaults);
+            let threads = part.threads();
+            let threaded = match &part {
+                Hardware::Screw(_)
+                | Hardware::Nut(_)
+                | Hardware::TNut(_)
+                | Hardware::Insert(_)
+                | Hardware::Standoff(_) => true,
+                Hardware::Rod(r) => r.kind == RodKind::Threaded,
+                Hardware::Gear(g) => g.set_screw > 0.0,
+                _ => false,
+            };
+            assert_eq!(!threads.is_empty(), threaded, "{}", tool.label);
+            let (from, to) = part.axis();
+            for t in threads {
+                assert!(t.pitch > 0.0 && t.length >= 0.0, "{}", tool.label);
+                assert!(t.designation.starts_with('M'), "{}", tool.label);
+                if from[0] == 0.0 && to[0] == 0.0 {
+                    let (low, high) = (from[2].min(to[2]), from[2].max(to[2]));
+                    assert!(
+                        t.point[2] > low && t.point[2] < high,
+                        "{}: {:?} within {low}..{high}",
+                        tool.label,
+                        t.point
+                    );
+                }
+            }
+        }
     }
 
     #[test]
