@@ -38,6 +38,16 @@ collection of the standards' dimension tables.
 
 Screws carry their drive recess, and fasteners can carry a modelled
 thread (off by default: a thread takes the kernel a second or two).
+A thread that is not modelled is drawn: every screw's shank, nut's,
+T-slot nut's, insert's and standoff's bore, threaded rod and lead
+screw, a standoff's stud, a roll-in T-slot nut's set screw hole and a
+gear hub's tapped hole carries a cosmetic thread of its pitch and
+length, named as its standard names it (`M6`, `M8x1` at a fine pitch,
+`1/4-20 UNC`, `Tr8x8 (P2)`). printCAD 0.9.0 and later draw it as a
+helix on the part, name it under View › Annotations, count it in the
+Assembly's parts list ("2 × M6 thread") and write it into a STEP
+export's callouts; the face itself keeps its size, a bore its tap
+drill and a shank its major diameter.
 Every table dimension can be overridden with **Custom dimensions**. Each part's tree
 entry has **Edit hardware**; selecting one in the tree opens its panel.
 
@@ -73,12 +83,14 @@ target come from `rust-toolchain.toml`:
 ```sh
 scripts/pack.sh                                  # dist/io.github.gilbertorconde.hardware-<version>.pcbench
 cargo test --target x86_64-unknown-linux-gnu     # the package's own logic
-(cd tests/kernel-check && cargo run --release)   # every part built by the real kernel
+(cd tests/kernel-check && cargo run --release --bin kernel-check)   # every part built by the real kernel
 ```
 
 The kernel check is a crate of its own that compiles the parts' modules
 in beside the native kernel, since the package itself only links as a
-component; it prints each part's volume and build time. Its `picture`
+component; it prints each part's volume and build time, and finds each declared
+thread on the built part as printCAD does, on a round face of its
+radius. Its `picture`
 binary (`cargo run --release --bin picture`) draws a few parts as the
 kernel builds them to `/tmp/hardware-<part>.svg`, to look at. Its
 `overlap` binary builds every boolean step of every part on its own and
@@ -86,7 +98,8 @@ intersects each pair, listing the features that share volume: a hole cut
 through a ball shows up there before it shows up in a picture.
 
 The SDK is [`printcad-bench-sdk`](https://crates.io/crates/printcad-bench-sdk)
-on crates.io, `0.1` for the `printcad:workbench@0.1` contract. To build
+on crates.io, `0.1.1` or later for the `printcad:workbench@0.1` contract
+(0.1.1 adds the plan's cosmetic threads). To build
 against a local printCAD, add a `[patch.crates-io]` naming the checkout's
 `sdk/printcad-bench-sdk`, `crates/bench_api` and `crates/kernel_api`.
 

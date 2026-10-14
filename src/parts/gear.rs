@@ -13,8 +13,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, count, fmt, group, integer,
-    length, note, number, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, count, fmt, group,
+    integer, length, note, number, toggle,
 };
 use crate::diagram::Sketch;
 use crate::geom;
@@ -1322,6 +1322,22 @@ impl Part for Gear {
             gear.flanges = on;
         }
         Ok(gear)
+    }
+
+    /// The set screw's tapped hole, in from +X, threaded from its mouth.
+    fn threads(&self) -> Vec<Thread> {
+        let Some((z, reach)) = self.set_screw_at() else {
+            return Vec::new();
+        };
+        let pitch = crate::standards::coarse_pitch(self.set_screw);
+        let r = (self.set_screw - 1.0825 * pitch) / 2.0;
+        let x = reach - pitch.min((reach - self.bore_reach()) / 4.0);
+        vec![Thread {
+            point: [x, 0.0, z + r],
+            pitch,
+            length: 0.0,
+            designation: crate::standards::metric_designation(self.set_screw, pitch),
+        }]
     }
 }
 

@@ -8,8 +8,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of, length,
-    note, number, text, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, fmt, group, index_of,
+    length, note, number, text, toggle,
 };
 use crate::diagram::Sketch;
 use crate::geom::{self, revolve};
@@ -339,6 +339,22 @@ impl Part for Insert {
             insert.thread = on;
         }
         Ok(insert)
+    }
+
+    /// The thread down its bore from the top, unless it is modelled.
+    fn threads(&self) -> Vec<Thread> {
+        if self.thread {
+            return Vec::new();
+        }
+        vec![Thread::about_z(
+            self.minor() / 2.0,
+            self.length,
+            false,
+            self.length,
+            self.pitch,
+            0.0,
+            standards::metric_designation(self.d, self.pitch),
+        )]
     }
 }
 

@@ -8,8 +8,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, default_length, fmt, group,
-    index_of, length, note, number, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, default_length, fmt,
+    group, index_of, length, note, number, toggle,
 };
 use crate::diagram::Sketch;
 use crate::geom::{self, across_corners, revolve};
@@ -575,6 +575,40 @@ impl Part for Standoff {
             standoff.thread = on;
         }
         Ok(standoff)
+    }
+
+    /// The threads not modelled: a threaded bore's up from the bottom,
+    /// and a stud's down from its tip.
+    fn threads(&self) -> Vec<Thread> {
+        let designation = standards::metric_designation(self.d, self.pitch);
+        let mut threads = Vec::new();
+        if self.bore == Bore::Thread && !self.thread {
+            let depth = self.thread_depth();
+            threads.push(Thread::about_z(
+                self.minor() / 2.0,
+                0.0,
+                true,
+                depth,
+                self.pitch,
+                0.0,
+                designation.clone(),
+            ));
+        }
+        // A stud too short for its groove carries none, modelled or not.
+        let stud_modelled = self.thread && self.stud > 3.0 * self.pitch;
+        if self.male() && !stud_modelled {
+            let c = (0.6 * self.pitch).min(self.d / 4.0);
+            threads.push(Thread::about_z(
+                self.d / 2.0,
+                self.length + self.stud - c,
+                false,
+                self.stud - c,
+                self.pitch,
+                0.0,
+                designation,
+            ));
+        }
+        threads
     }
 }
 

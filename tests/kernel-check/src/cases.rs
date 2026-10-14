@@ -214,6 +214,12 @@ pub fn cases() -> Vec<Case> {
         "screw socket_cap M3 × 20, modelled thread, lead-in",
         Hardware::Screw(long),
     );
+    let mut partial = Screw::new(Head::SocketCap, "M4", &d);
+    partial.length = 40.0;
+    case(
+        "screw socket_cap M4 × 40, threaded 20",
+        Hardware::Screw(partial),
+    );
     case("spring Ø10 × 25", Hardware::Spring(Spring::default()));
     use crate::parts::standoff::{Bore, Standoff, StandoffShape};
     case(
@@ -222,6 +228,10 @@ pub fn cases() -> Vec<Case> {
     );
     let mut mf = Standoff::new(StandoffShape::Hex, "M3", &d);
     mf.stud = 6.0;
+    case(
+        "standoff hex M3 × 10 male-female",
+        Hardware::Standoff(mf.clone()),
+    );
     mf.thread = true;
     case("standoff hex M3 × 10 male-female, modelled thread", Hardware::Standoff(mf));
     let mut ins = Standoff::new(StandoffShape::Round, "M4", &d);

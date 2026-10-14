@@ -12,8 +12,8 @@ use printcad_bench_sdk::api::{DiagramStroke, PanelEvent, Parameter, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Ctx, Defaults, Family, Part, arg_bool, arg_f64, arg_str, choice, default_length, fmt, group,
-    index_of, length, note, number, toggle,
+    Ctx, Defaults, Family, Part, Thread, arg_bool, arg_f64, arg_str, choice, default_length, fmt,
+    group, index_of, length, note, number, toggle,
 };
 use crate::diagram::{Sketch, shank};
 use crate::geom::{self, across_corners, arc, polygon, revolve, revolve_segments};
@@ -237,6 +237,16 @@ impl Screw {
         self.k = row.k;
         self.s = row.s;
         self.t = row.t;
+    }
+
+    /// What its thread is called: `M6`, `M8x1`, `1/4-20 UNC`.
+    pub fn designation(&self) -> String {
+        let table = self.table();
+        if table.inch && table.rows.iter().any(|r| r.size == self.size) {
+            standards::inch_designation(&self.size, self.pitch)
+        } else {
+            standards::metric_designation(self.d, self.pitch)
+        }
     }
 
     /// The thread length the standard gives a screw of this size: twice
@@ -767,6 +777,36 @@ impl Part for Screw {
             screw.thread = on;
         }
         Ok(screw)
+    }
+
+    /// The thread up the shank from the tip, unless it is modelled.
+    fn threads(&self) -> Vec<Thread> {
+        if self.thread {
+            return Vec::new();
+        }
+        let shank = self.shank_length();
+        // The round face starts above the tip's chamfer, or a set
+        // screw's point.
+        let tip = match self.head {
+            Head::Set => (self.d - self.dk) / 2.0,
+            _ => self.tip_chamfer(),
+        }
+        .clamp(0.0, shank);
+        let run = self.threaded();
+        let length = if run >= shank - 1e-6 {
+            0.0
+        } else {
+            (run - tip).max(self.pitch)
+        };
+        vec![Thread::about_z(
+            self.d / 2.0,
+            -shank + tip,
+            true,
+            shank - tip,
+            self.pitch,
+            length,
+            self.designation(),
+        )]
     }
 }
 
