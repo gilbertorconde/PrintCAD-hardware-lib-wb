@@ -1281,7 +1281,7 @@ mod tests {
         );
         assert_eq!(
             designation(Family::Screw, json!({"standard": "ASME", "size": "1/4-20"})),
-            [("1/4-20 UNC".into(), 25.4 / 20.0)]
+            [("1/4-20".into(), 25.4 / 20.0)]
         );
         assert_eq!(
             designation(

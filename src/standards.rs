@@ -104,15 +104,12 @@ pub fn metric_designation(d: f64, pitch: f64) -> String {
 }
 
 /// What an inch thread sized `size` (`1/4-20`, `#10-24`) is called at
-/// `pitch`: `1/4-20 UNC` at the coarse count the size names, `1/4-28 UN`
-/// at another.
+/// `pitch`: its size and threads per inch, `1/4-20` or `1/4-28`, as
+/// printCAD's hole tables write them, so a screw and the hole it fits count
+/// as one thread in the parts list.
 pub fn inch_designation(size: &str, pitch: f64) -> String {
-    let (base, named) = size.split_once('-').unwrap_or((size, ""));
-    let tpi = (IN / pitch).round();
-    match named.parse::<f64>() {
-        Ok(n) if n == tpi => format!("{size} UNC"),
-        _ => format!("{base}-{tpi} UN"),
-    }
+    let (base, _) = size.split_once('-').unwrap_or((size, ""));
+    format!("{base}-{}", (IN / pitch).round())
 }
 
 /// What a trapezoidal lead screw is called (ISO 2904): `Tr8x2`, and
@@ -1281,9 +1278,9 @@ mod tests {
         assert_eq!(metric_designation(2.5, 0.45), "M2.5");
         assert_eq!(metric_designation(8.0, 1.0), "M8x1");
         assert_eq!(metric_designation(6.0, 0.75), "M6x0.75");
-        assert_eq!(inch_designation("1/4-20", IN / 20.0), "1/4-20 UNC");
-        assert_eq!(inch_designation("#4-40", IN / 40.0), "#4-40 UNC");
-        assert_eq!(inch_designation("1/4-20", IN / 28.0), "1/4-28 UN");
+        assert_eq!(inch_designation("1/4-20", IN / 20.0), "1/4-20");
+        assert_eq!(inch_designation("#4-40", IN / 40.0), "#4-40");
+        assert_eq!(inch_designation("1/4-20", IN / 28.0), "1/4-28");
         assert_eq!(trapezoidal_designation(8.0, 2.0, 2.0), "Tr8x2");
         assert_eq!(trapezoidal_designation(8.0, 2.0, 8.0), "Tr8x8 (P2)");
     }

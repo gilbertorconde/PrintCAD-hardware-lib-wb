@@ -105,7 +105,7 @@ pub struct Thread {
     pub pitch: f64,
     /// How far it runs from that end; 0 for the whole face.
     pub length: f64,
-    /// What it is called: `M6`, `M8x1`, `1/4-20 UNC`, `Tr8x8 (P2)`.
+    /// What it is called: `M6`, `M8x1`, `1/4-20`, `Tr8x8 (P2)`.
     pub designation: String,
 }
 

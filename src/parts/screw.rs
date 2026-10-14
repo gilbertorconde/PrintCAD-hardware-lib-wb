@@ -239,7 +239,7 @@ impl Screw {
         self.t = row.t;
     }
 
-    /// What its thread is called: `M6`, `M8x1`, `1/4-20 UNC`.
+    /// What its thread is called: `M6`, `M8x1`, `1/4-20`.
     pub fn designation(&self) -> String {
         let table = self.table();
         if table.inch && table.rows.iter().any(|r| r.size == self.size) {

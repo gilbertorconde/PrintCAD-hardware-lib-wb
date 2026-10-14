@@ -43,7 +43,7 @@ T-slot nut's, insert's and standoff's bore, threaded rod and lead
 screw, a standoff's stud, a roll-in T-slot nut's set screw hole and a
 gear hub's tapped hole carries a cosmetic thread of its pitch and
 length, named as its standard names it (`M6`, `M8x1` at a fine pitch,
-`1/4-20 UNC`, `Tr8x8 (P2)`). printCAD 0.9.0 and later draw it as a
+`1/4-20`, `Tr8x8 (P2)`). printCAD 0.9.0 and later draw it as a
 helix on the part, name it under View › Annotations, count it in the
 Assembly's parts list ("2 × M6 thread") and write it into a STEP
 export's callouts; the face itself keeps its size, a bore its tap
