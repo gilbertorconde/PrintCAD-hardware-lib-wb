@@ -48,6 +48,28 @@ helix on the part, name it under View › Annotations, count it in the
 Assembly's parts list ("2 × M6 thread") and write it into a STEP
 export's callouts; the face itself keeps its size, a bore its tap
 drill and a shank its major diameter.
+A part can go straight into a hole: select a bore (or a counterbore's
+seat, or a hole's round edge) and pick the tool. The part sits in the
+hole, its axis along the hole's, and takes the size the hole was made
+for:
+
+| Part | Sits | Sized from the hole as |
+| --- | --- | --- |
+| Screw | head on the opening, shank down the hole | an ISO 273 clearance hole, then a tap drill, an insert's hole, the thread's own diameter |
+| Nut, washer, standoff | on the face round the opening | the same; a male-female standoff puts its stud in the hole, tap drill first |
+| Heat-set insert | flush with the opening, or on a shallow hole's floor | its insert hole |
+| Ball bearing, linear bushing | flush with the opening | its outer ring, the widest the pocket is deep enough for |
+| Disc magnet | flush with the opening | its diameter, the tallest the pocket is deep enough for |
+| Rod, spring | down to the hole's bottom | a shaft or dowel pin by its stock diameter, a threaded rod as a screw |
+
+With several holes picked, the part goes into the first and its panel
+says how many more there are; with **Into every other Ø… hole of the body
+too**, it also goes into every hole of that diameter. When the task is
+accepted, each of those holes gets the part as it was finally set, on a
+body of its own. A bore printCAD does not count as a hole (one under a
+countersink) is still found from its picked face, its opening taken as
+the end facing the view.
+
 Every table dimension can be overridden with **Custom dimensions**. Each part's tree
 entry has **Edit hardware**; selecting one in the tree opens its panel.
 
@@ -59,6 +81,8 @@ pc.io.github.gilbertorconde.hardware.make{part = "screw", head = "button", size 
 pc.io.github.gilbertorconde.hardware.make{part = "extrusion", profile = "2040", length = 300, along = "X", slots = "three"}
 pc.io.github.gilbertorconde.hardware.make{part = "tnut", kind = "spring_ball", series = 20, size = "M5"}
 pc.io.github.gilbertorconde.hardware.make{part = "bearing", name = "608"}
+-- into a hole (its opening, the way into the material, diameter, depth), sized to it: an M3 insert
+pc.io.github.gilbertorconde.hardware.make{part = "insert", hole = {entry = {10, 0, 5}, direction = {0, 0, -1}, diameter = 4, depth = 7}}
 pc.io.github.gilbertorconde.hardware.catalog{}
 ```
 
