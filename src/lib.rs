@@ -10,12 +10,16 @@
 //! at the top of the panel.
 
 pub mod diagram;
+pub mod fit;
 pub mod geom;
 pub mod parts;
 pub mod standards;
 
+use printcad_bench_sdk::api::kernel_api::FaceSurface;
 use printcad_bench_sdk::api::*;
 use printcad_bench_sdk::{Bench, Value, bench, host, json, serde_json};
+
+use fit::{Fit, Hole};
 
 use parts::bearing::BearingKind;
 use parts::gear::{Gear, GearKind};
@@ -509,6 +513,53 @@ const LENGTH_KEYS: [&str; 52] = [
     "pressure",
 ];
 
+/// The hole the part under edit was put in, and the holes it goes into
+/// too once its task is accepted.
+struct InHoles {
+    first: Hole,
+    /// The other holes picked with it.
+    more: Vec<Hole>,
+    /// The body's other holes of its size.
+    like: Vec<Hole>,
+    /// Into every one of `like` as well.
+    every: bool,
+    /// The size the hole called for, when it called for one.
+    fit: Option<String>,
+}
+
+impl InHoles {
+    fn targets(&self) -> impl Iterator<Item = &Hole> {
+        let like = if self.every { &self.like[..] } else { &[] };
+        self.more.iter().chain(like)
+    }
+
+    fn panel(&self) -> Widget {
+        let d = parts::fmt((self.first.diameter * 100.0).round() / 100.0);
+        let mut text = format!("In the Ø{d} hole picked");
+        if let Some(size) = &self.fit {
+            text.push_str(&format!(", sized {size} to it"));
+        }
+        match self.more.len() {
+            0 => {}
+            1 => text.push_str("; one more picked takes the same part"),
+            n => text.push_str(&format!("; {n} more picked take the same part")),
+        }
+        text.push('.');
+        let mut children = vec![parts::text(text)];
+        if !self.like.is_empty() {
+            children.push(parts::toggle(
+                EVERY,
+                &format!(
+                    "Into every other Ø{d} hole of the body too ({})",
+                    self.like.len()
+                ),
+                self.every,
+            ));
+        }
+        parts::group("Hole", true, children)
+    }
+}
+
 #[derive(Default)]
 struct HardwareBench {
     /// The part whose task is open, with its data when it opened.
@@ -518,6 +569,8 @@ struct HardwareBench {
     /// The field last changed, whose measure the drawing emphasises.
     focus: Option<String>,
     defaults: Defaults,
+    /// The holes the part under edit was put in, when it was.
+    holes: Option<InHoles>,
 }
 
 impl HardwareBench {
@@ -535,6 +588,7 @@ impl HardwareBench {
             self.editing = Some((id.to_string(), part));
             self.fresh = fresh;
             self.focus = None;
+            self.holes = None;
         }
     }
 
@@ -557,6 +611,95 @@ impl HardwareBench {
             }
             Err(e) => host::error(&format!("No {}: {e}", part.family().name())),
         }
+    }
+
+    /// Sit the body of `feature`, `part`, in `hole`.
+    fn place(feature: &str, part: &Hardware, hole: &Hole) {
+        let Some(body) = host::feature(feature).and_then(|n| n.body) else {
+            return;
+        };
+        let Some(matrix) = fit::placement(part, hole) else {
+            return;
+        };
+        if let Err(e) = host::call(
+            calls::SET_PLACEMENT,
+            json!({"body": body, "matrix": matrix}),
+        ) {
+            host::error(&format!("The part is not in the hole: {e}"));
+        }
+    }
+
+    /// The holes the picks name, in the order picked, and the picked
+    /// body's other holes the size of the first.
+    fn picked_holes(pointer: &Pointer) -> (Vec<Hole>, Vec<Hole>) {
+        let body = pointer
+            .selected_body
+            .clone()
+            .or_else(|| pointer.edges.first().map(|e| e.body.clone()));
+        let Some(body) = body else {
+            return Default::default();
+        };
+        let all: Vec<Hole> = host::call(calls::GEOM_HOLES, json!({"body": body}))
+            .ok()
+            .and_then(|v| {
+                v.as_array()
+                    .map(|a| a.iter().filter_map(Hole::read).collect())
+            })
+            .unwrap_or_default();
+        let toward = pointer.ray.map(|(_, d)| d.map(f64::from));
+        let mut picked: Vec<Hole> = fit::picked(&all, pointer, toward)
+            .into_iter()
+            .map(|(_, hole)| hole)
+            .collect();
+        // A bore the host does not count as a hole (under a countersink):
+        // from the round edges that end it.
+        let faces = if pointer.faces.is_empty() {
+            pointer.face.as_slice()
+        } else {
+            &pointer.faces[..]
+        };
+        for face in faces {
+            let bore = matches!(face.surface, Some(FaceSurface::Cylinder { .. }))
+                && fit::at_face(&all, face).is_none();
+            if !bore {
+                continue;
+            }
+            let ends = Self::round_edges(&body, face.point);
+            if let Some(hole) = fit::bore(face, &ends, toward)
+                && !picked.iter().any(|h| fit::same(h, &hole))
+            {
+                picked.push(hole);
+            }
+        }
+        let like = match picked.first() {
+            // Each from the side the first is entered from.
+            Some(first) => all
+                .iter()
+                .map(|h| h.facing(first.direction))
+                .filter(|h| h.like(first) && !picked.iter().any(|p| fit::same(p, h)))
+                .collect(),
+            None => Vec::new(),
+        };
+        (picked, like)
+    }
+
+    /// The centres of the round edges round the face of `body` at
+    /// `point`.
+    fn round_edges(body: &str, point: [f32; 3]) -> Vec<[f64; 3]> {
+        host::call(
+            calls::GEOM_FACE_LOOPS,
+            json!({"body": body, "point": point}),
+        )
+        .ok()
+        .and_then(|v| serde_json::from_value::<FaceLoops>(v).ok())
+        .map(|f| {
+            f.loops
+                .iter()
+                .flatten()
+                .filter_map(|e| e.circle.map(|c| c.center.map(f64::from)))
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
     fn write(&self, id: &str, part: &Hardware) {
@@ -668,6 +811,7 @@ const MAKE: &str = "make";
 const CATALOG: &str = "catalog";
 const EDIT: &str = "edit";
 const ANOTHER: &str = "another";
+const EVERY: &str = "every_hole";
 
 impl Bench for HardwareBench {
     fn describe(&self) -> Registration {
@@ -717,6 +861,7 @@ impl Bench for HardwareBench {
                         param("bore", ParamKind::String, false, "a standoff's bore: `thread`, `clear` (a spacer) or `insert` (heat-set insert holes)"),
                         param("stud", ParamKind::Number, false, "a male-female standoff's stud length, mm"),
                         param("d", ParamKind::Number, false, "any dimension the part's panel shows may be given by its name (`d`, `dk`, `k`, `s`, `m`, `outer`, `wire`, `turns`…) and makes the part custom"),
+                        param("hole", ParamKind::Any, false, "a hole to put it in, `{entry, direction, diameter, depth, through}` as `geom.holes` answers (world, `direction` into the material): the part sits in it and, when no size is given, takes the size the hole is made for (a screw's clearance or tap drill, an insert's hole, a bearing's or magnet's pocket)"),
                     ],
                     returns: "{body, feature}".into(),
                     read_only: false,
@@ -834,11 +979,30 @@ impl Bench for HardwareBench {
                         Family::ALL.map(|f| f.name()).join(", ")
                     )
                 })?;
-                let part = Hardware::with_args(family, &args, &self.defaults)?;
+                let hole = match args.get("hole") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(
+                        Hole::read(v)
+                            .ok_or("`hole` is `{entry, direction, diameter, depth, through}`")?,
+                    ),
+                };
+                let mut part = Hardware::with_args(family, &args, &self.defaults)?;
+                if let Some(hole) = &hole {
+                    let fit = fit::fit(&part, hole);
+                    if !fit.is_empty() {
+                        part = Hardware::with_args(family, &fit.into_args(&args), &self.defaults)?;
+                    }
+                    if fit::seat(&part, hole).is_none() {
+                        return Err(format!("a {} does not go in a hole", family.name()));
+                    }
+                }
                 if let Some(problem) = part.problem() {
                     return Err(problem);
                 }
                 let (body, feature) = self.make(&part)?;
+                if let Some(hole) = &hole {
+                    Self::place(&feature, &part, hole);
+                }
                 Ok(json!({"body": body, "feature": feature}))
             }
             _ => Err(format!("no command `{command}`")),
@@ -853,8 +1017,27 @@ impl Bench for HardwareBench {
                 let Some(def) = TOOLS.iter().find(|t| id(t.suffix) == tool) else {
                     return false;
                 };
-                let part = (def.seed)(&self.defaults);
-                self.add(part, &format!("New {}", def.label.to_lowercase()));
+                let mut part = (def.seed)(&self.defaults);
+                let (picked, like) = Self::picked_holes(&input.pointer);
+                let mut picked = picked.into_iter();
+                let first = picked.next().filter(|h| fit::seat(&part, h).is_some());
+                let Some(first) = first else {
+                    self.add(part, &format!("New {}", def.label.to_lowercase()));
+                    return true;
+                };
+                let sized: Fit = fit::fit(&part, &first);
+                part = sized.apply(part, &self.defaults);
+                self.add(part.clone(), &format!("{} in a hole", def.label));
+                if let Some((id, _)) = &self.editing {
+                    Self::place(id, &part, &first);
+                    self.holes = Some(InHoles {
+                        first,
+                        more: picked.collect(),
+                        like,
+                        every: false,
+                        fit: sized.name(),
+                    });
+                }
                 true
             }
             // A double click on a part's tree row.
@@ -936,6 +1119,9 @@ impl Bench for HardwareBench {
             focus: self.focus.as_deref(),
         };
         frame.panel = part.panel(&ctx);
+        if let Some(holes) = &self.holes {
+            frame.panel.push(holes.panel());
+        }
         frame.panel.push(Widget::Separator);
         frame.panel.push(Widget::Button {
             id: ANOTHER.into(),
@@ -965,6 +1151,14 @@ impl Bench for HardwareBench {
             }
             return;
         }
+        if let PanelEvent::Toggle { id, on } = &event
+            && id == EVERY
+        {
+            if let Some(holes) = &mut self.holes {
+                holes.every = *on;
+            }
+            return;
+        }
         let Some((id, mut part)) = self.edited() else {
             return;
         };
@@ -977,13 +1171,35 @@ impl Bench for HardwareBench {
         if part.apply(&event) {
             self.focus = Some(event.id().to_string());
             self.write(&id, &part);
+            // A longer insert or bearing sits deeper to stay flush.
+            if let Some(holes) = &self.holes {
+                Self::place(&id, &part, &holes.first);
+            }
         }
     }
 
     fn task_close(&mut self, accept: bool) -> Option<String> {
         let (id, opened) = self.editing.take()?;
         self.focus = None;
+        let holes = self.holes.take();
         if accept {
+            // The part as accepted, into each other hole it goes in.
+            let part = host::feature(&id).and_then(|n| Hardware::read(&n.kind, &n.data));
+            if let (Some(holes), Some(part)) = (holes, part) {
+                let mut count = 1;
+                for hole in holes.targets() {
+                    match self.make(&part) {
+                        Ok((_, feature)) => {
+                            Self::place(&feature, &part, hole);
+                            count += 1;
+                        }
+                        Err(e) => host::error(&format!("No {}: {e}", part.family().name())),
+                    }
+                }
+                if count > 1 {
+                    return Some(format!("{} × {} in holes", count, part.label()));
+                }
+            }
             return Some(format!("Edit {}", opened.family().name()));
         }
         let undone = if self.fresh {
