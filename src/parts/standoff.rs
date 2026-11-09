@@ -469,7 +469,7 @@ impl Part for Standoff {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "shape" => {
                     self.shape = StandoffShape::ALL
                         .get(*index)
@@ -497,7 +497,7 @@ impl Part for Standoff {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "length" => self.length = *value,
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
@@ -507,7 +507,7 @@ impl Part for Standoff {
                 "depth" => self.depth = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {

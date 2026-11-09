@@ -237,7 +237,7 @@ impl Part for Bearing {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = BearingKind::ALL
                         .get(*index)
@@ -254,13 +254,13 @@ impl Part for Bearing {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "bore" => self.bore = *value,
                 "outer" => self.outer = *value,
                 "width" => self.width = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } if id == "custom" => {
+            PanelEvent::Toggle { id, on, .. } if id == "custom" => {
                 self.custom = *on;
                 if !*on {
                     self.refill();

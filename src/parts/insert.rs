@@ -267,7 +267,7 @@ impl Part for Insert {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "size" => {
                     if let Some(size) = Self::sizes().get(*index) {
                         self.size = (*size).into();
@@ -285,7 +285,7 @@ impl Part for Insert {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
                 "outer" => self.outer = *value,
@@ -294,7 +294,7 @@ impl Part for Insert {
                 "hole" => self.hole = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {

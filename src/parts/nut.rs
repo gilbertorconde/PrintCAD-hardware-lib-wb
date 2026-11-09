@@ -519,7 +519,7 @@ impl Part for Nut {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = NutKind::ALL.get(*index).copied().unwrap_or(NutKind::Hex);
                     self.standard = self.standards().first().cloned().unwrap_or_default();
@@ -539,7 +539,7 @@ impl Part for Nut {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
                 "s" => self.s = *value,
@@ -551,7 +551,7 @@ impl Part for Nut {
                 "k" => self.k = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {

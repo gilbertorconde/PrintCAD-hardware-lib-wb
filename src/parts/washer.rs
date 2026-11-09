@@ -201,6 +201,7 @@ impl Part for Washer {
                             [r1, h],
                             [r0, h],
                         ]))],
+                        ..Default::default()
                     },
                     kind: SweepKind::Helix {
                         axis_origin: [0.0, 0.0],
@@ -257,7 +258,7 @@ impl Part for Washer {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = WasherKind::ALL
                         .get(*index)
@@ -274,13 +275,13 @@ impl Part for Washer {
                 "standard" => {}
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d1" => self.d1 = *value,
                 "d2" => self.d2 = *value,
                 "h" => self.h = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } if id == "custom" => {
+            PanelEvent::Toggle { id, on, .. } if id == "custom" => {
                 self.custom = *on;
                 if !*on {
                     self.refill();

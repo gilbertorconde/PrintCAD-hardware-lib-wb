@@ -9,6 +9,11 @@
 //! from, `geom` the kernel ops they build with and `diagram` the drawing
 //! at the top of the panel.
 
+// Every literal of the contract's structs ends in `..Default::default()`,
+// even one naming every field, so a field a later 0.1.x adds leaves the
+// package building.
+#![allow(clippy::needless_update)]
+
 pub mod diagram;
 pub mod fit;
 pub mod geom;
@@ -820,6 +825,7 @@ impl Bench for HardwareBench {
             kind,
             required,
             doc: doc.into(),
+            ..Default::default()
         };
         Registration {
             label: "Hardware".into(),
@@ -894,12 +900,14 @@ impl Bench for HardwareBench {
                 kind_label: part.label(),
                 family_label: part.family().title().into(),
                 builds_solid: true,
+                ..Default::default()
             },
             None => FeatureInfo {
                 icon: "hardware".into(),
                 kind_label: family.map_or("Hardware", |f| f.title()).into(),
                 family_label: "Hardware".into(),
                 builds_solid: true,
+                ..Default::default()
             },
         }
     }
@@ -926,6 +934,7 @@ impl Bench for HardwareBench {
                             message,
                         },
                         threads: Vec::new(),
+                        ..Default::default()
                     };
                     let Some(part) = Hardware::read(&node.kind, &node.data) else {
                         return fail("The part's data does not read.".into());
@@ -960,6 +969,7 @@ impl Bench for HardwareBench {
                         Plan::Ops { ops, op_features }
                     },
                     threads,
+                    ..Default::default()
                 }
             })
             .collect()
@@ -1041,11 +1051,13 @@ impl Bench for HardwareBench {
                 true
             }
             // A double click on a part's tree row.
-            Event::EditFeature { feature } => {
+            Event::EditFeature { feature, .. } => {
                 self.open(feature, false);
                 true
             }
-            Event::Key { key, down: true } if key == "Escape" && self.editing.is_some() => {
+            Event::Key {
+                key, down: true, ..
+            } if key == "Escape" && self.editing.is_some() => {
                 self.task_close(false);
                 true
             }
@@ -1106,6 +1118,7 @@ impl Bench for HardwareBench {
             name: part.family().title().into(),
             prompt: "Set its standard and size in the panel".into(),
             keys: vec![("Esc".into(), "cancel".into())],
+            ..Default::default()
         });
         frame.status.selection = Some(part.label());
         frame.editing = Some(id.clone());
@@ -1113,6 +1126,7 @@ impl Bench for HardwareBench {
             title: part.family().title().into(),
             icon: part.icon().into(),
             confirmable: true,
+            ..Default::default()
         });
         let ctx = Ctx {
             feature: &id,
@@ -1135,23 +1149,23 @@ impl Bench for HardwareBench {
     fn panel_event(&mut self, slot: PanelSlot, event: PanelEvent) {
         if slot == PanelSlot::Settings {
             match event {
-                PanelEvent::Choice { id, index } if id == "size" => {
+                PanelEvent::Choice { id, index, .. } if id == "size" => {
                     if let Some(size) = standards::METRIC_SIZES.get(index) {
                         self.defaults.size = (*size).into();
                     }
                 }
-                PanelEvent::Choice { id, index } if id == "series" => {
+                PanelEvent::Choice { id, index, .. } if id == "series" => {
                     if let Some(series) = standards::EXTRUSIONS.get(index) {
                         self.defaults.series = series.cell;
                     }
                 }
-                PanelEvent::Toggle { id, on } if id == "socket" => self.defaults.socket = on,
-                PanelEvent::Toggle { id, on } if id == "thread" => self.defaults.thread = on,
+                PanelEvent::Toggle { id, on, .. } if id == "socket" => self.defaults.socket = on,
+                PanelEvent::Toggle { id, on, .. } if id == "thread" => self.defaults.thread = on,
                 _ => {}
             }
             return;
         }
-        if let PanelEvent::Toggle { id, on } = &event
+        if let PanelEvent::Toggle { id, on, .. } = &event
             && id == EVERY
         {
             if let Some(holes) = &mut self.holes {
@@ -1162,7 +1176,7 @@ impl Bench for HardwareBench {
         let Some((id, mut part)) = self.edited() else {
             return;
         };
-        if let PanelEvent::Button { id: button } = &event {
+        if let PanelEvent::Button { id: button, .. } = &event {
             if button == ANOTHER {
                 self.add(part, "Add another part");
             }
@@ -1373,6 +1387,7 @@ mod tests {
                 body: "b".into(),
                 features: vec![node("one")],
             }],
+            ..Default::default()
         });
         assert!(
             matches!(&plans[0].plan, Plan::Ops { ops, op_features } if ops.len() == 2 && op_features.iter().all(|f| f == "one"))
@@ -1382,6 +1397,7 @@ mod tests {
                 body: "b".into(),
                 features: vec![node("one"), node("two")],
             }],
+            ..Default::default()
         });
         assert!(matches!(&plans[0].plan, Plan::Error { feature: Some(f), .. } if f == "two"));
     }
@@ -1406,6 +1422,7 @@ mod tests {
                 body: "b".into(),
                 features: vec![node],
             }],
+            ..Default::default()
         });
         assert!(matches!(plans[0].plan, Plan::Ops { .. }));
         plans.remove(0)

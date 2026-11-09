@@ -137,6 +137,7 @@ impl<'a> Sketch<'a> {
             offset: offset as f32,
             text: text.into(),
             emphasis: self.focus == Some(key),
+            ..Default::default()
         });
         self
     }
@@ -183,6 +184,7 @@ impl<'a> Sketch<'a> {
             at: a,
             text: text.into(),
             emphasis: self.focus == Some(key),
+            ..Default::default()
         });
         self
     }

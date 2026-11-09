@@ -1,6 +1,11 @@
 //! Pictures of parts as the kernel builds them: each part's mesh, shaded
 //! and drawn to an SVG from a three-quarter view, to look at.
 //! `cargo run --release --bin picture` writes /tmp/hardware-<name>.svg.
+
+// The package's modules fill the contract's structs with
+// `..Default::default()` even where every field is named.
+#![allow(clippy::needless_update)]
+
 #[path = "../../../../src/diagram.rs"]
 pub mod diagram;
 #[path = "../../../../src/geom.rs"]

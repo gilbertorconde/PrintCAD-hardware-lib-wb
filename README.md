@@ -122,8 +122,11 @@ intersects each pair, listing the features that share volume: a hole cut
 through a ball shows up there before it shows up in a picture.
 
 The SDK is [`printcad-bench-sdk`](https://crates.io/crates/printcad-bench-sdk)
-on crates.io, `0.1.1` or later for the `printcad:workbench@0.1` contract
-(0.1.1 adds the plan's cosmetic threads). To build
+on crates.io, built against `0.1.4` for the `printcad:workbench@0.1`
+contract. The package uses nothing past 0.1.1 (the plan's cosmetic
+threads), so it sets no `min_contract`. Every literal of the contract's
+structs ends in `..Default::default()` and every match on what the app
+sends has a wildcard arm, so a later 0.1.x builds as it is. To build
 against a local printCAD, add a `[patch.crates-io]` naming the checkout's
 `sdk/printcad-bench-sdk`, `crates/bench_api` and `crates/kernel_api`.
 

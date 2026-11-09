@@ -369,6 +369,7 @@ pub fn number(ctx: &Ctx, id: &str, label: &str, value: f64, min: f64, decimals: 
         bind: Some(Bind {
             feature: ctx.feature.into(),
             key: format!("/{id}"),
+            ..Default::default()
         }),
         min: Some(min),
         max: None,
@@ -387,6 +388,7 @@ pub fn count(ctx: &Ctx, id: &str, label: &str, value: f64, min: f64) -> Widget {
         bind: Some(Bind {
             feature: ctx.feature.into(),
             key: format!("/{id}"),
+            ..Default::default()
         }),
         min: Some(min),
         max: None,

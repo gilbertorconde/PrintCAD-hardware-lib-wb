@@ -200,7 +200,7 @@ impl Part for Magnet {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "shape" => {
                     let shape = MagnetShape::ALL
                         .get(*index)
@@ -227,7 +227,7 @@ impl Part for Magnet {
                 },
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d" => self.d = *value,
                 "bore" => self.bore = *value,
                 "l" => self.l = *value,
