@@ -650,7 +650,7 @@ impl Part for Screw {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "head" => {
                     self.head = Head::ALL.get(*index).copied().unwrap_or(Head::SocketCap);
                     self.standard = self.head.standards()[0].name.into();
@@ -673,7 +673,7 @@ impl Part for Screw {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "length" => self.length = *value,
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
@@ -684,7 +684,7 @@ impl Part for Screw {
                 "thread_length" => self.thread_length = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {

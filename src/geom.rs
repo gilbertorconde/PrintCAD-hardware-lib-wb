@@ -117,6 +117,7 @@ pub fn extrude(
         profile: Profile {
             plane,
             wires: wires.into_iter().map(ProfileWire::new).collect(),
+            ..Default::default()
         },
         kind: SweepKind::Extrude {
             termination: ExtrudeTermination::Blind { distance: height },
@@ -155,6 +156,7 @@ pub fn revolve_segments(segments: Vec<ProfileSegment>, op: BooleanOp) -> SolidOp
         profile: Profile {
             plane: section(),
             wires: vec![ProfileWire::new(segments)],
+            ..Default::default()
         },
         kind: SweepKind::Revolve {
             axis_origin: [0.0, 0.0],
@@ -297,6 +299,7 @@ pub fn thread_groove_at(
         profile: Profile {
             plane,
             wires: vec![ProfileWire::new(polygon(&corners))],
+            ..Default::default()
         },
         kind: SweepKind::Helix {
             axis_origin: [0.0, 0.0],

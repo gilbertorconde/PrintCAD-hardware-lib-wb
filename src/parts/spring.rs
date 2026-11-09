@@ -92,6 +92,7 @@ impl Part for Spring {
                     [r, self.wire / 2.0],
                     self.wire,
                 )])],
+                ..Default::default()
             },
             kind: SweepKind::Helix {
                 axis_origin: [0.0, 0.0],
@@ -132,7 +133,7 @@ impl Part for Spring {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "outer" => self.outer = *value,
                 "wire" => self.wire = *value,
                 "length" => self.length = *value,

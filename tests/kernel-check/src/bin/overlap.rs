@@ -6,6 +6,10 @@
 //! its bore, a socket and its head, a knurl band and its core. The
 //! table is for reading, not a pass or fail.
 
+// The package's modules fill the contract's structs with
+// `..Default::default()` even where every field is named.
+#![allow(clippy::needless_update)]
+
 #[path = "../cases.rs"]
 mod cases;
 #[path = "../../../../src/diagram.rs"]

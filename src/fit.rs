@@ -175,6 +175,7 @@ pub fn at_face(holes: &[Hole], face: &FaceRef) -> Option<usize> {
             origin,
             axis,
             radius,
+            ..
         } => {
             let (origin, axis) = (f64s(origin), f64s(axis));
             nearest(holes, |h| {
@@ -212,6 +213,7 @@ pub fn bore(face: &FaceRef, ends: &[[f64; 3]], toward: Option<[f64; 3]>) -> Opti
         origin,
         axis,
         radius,
+        ..
     }) = face.surface
     else {
         return None;

@@ -658,7 +658,7 @@ impl Part for Extrusion {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "series" => {
                     self.series = standards::EXTRUSIONS.get(*index).map_or(20, |s| s.cell);
                     if !self.custom {
@@ -669,7 +669,7 @@ impl Part for Extrusion {
                 "slots" => self.slots = Slots::ALL.get(*index).copied().unwrap_or_default(),
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "cells_x" => self.cells_x = value.round().max(1.0) as u32,
                 "cells_y" => self.cells_y = value.round().max(1.0) as u32,
                 "length" => self.length = *value,
@@ -683,7 +683,7 @@ impl Part for Extrusion {
                 "corner" => self.corner = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "v_slot" => {
                     self.v_slot = *on;
                     if !self.custom {

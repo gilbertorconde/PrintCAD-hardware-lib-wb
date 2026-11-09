@@ -559,6 +559,7 @@ impl Gear {
         Profile {
             plane: geom::xy(z),
             wires: vec![ProfileWire::new(geom::polygon(points))],
+            ..Default::default()
         }
     }
 
@@ -1208,7 +1209,7 @@ impl Part for Gear {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = GearKind::ALL.get(*index).copied().unwrap_or(GearKind::Spur);
                     self.suit();
@@ -1240,7 +1241,7 @@ impl Part for Gear {
                 "set_screw" => self.set_screw = [0.0, 3.0, 4.0, 5.0][(*index).min(3)],
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "teeth" => self.teeth = value.round().max(1.0) as u32,
                 "module" => self.module = *value,
                 "pressure" => self.pressure = *value,
@@ -1260,7 +1261,7 @@ impl Part for Gear {
                 "starts" => self.starts = value.round().max(1.0) as u32,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } if id == "flanges" => self.flanges = *on,
+            PanelEvent::Toggle { id, on, .. } if id == "flanges" => self.flanges = *on,
             _ => return false,
         }
         true

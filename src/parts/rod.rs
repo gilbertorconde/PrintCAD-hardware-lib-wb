@@ -334,7 +334,7 @@ impl Part for Rod {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = RodKind::ALL.get(*index).copied().unwrap_or(RodKind::Shaft);
                     self.size = format!("Ø{}", fmt(self.d));
@@ -351,14 +351,14 @@ impl Part for Rod {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
                 "lead" => self.lead = *value,
                 "length" => self.length = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {

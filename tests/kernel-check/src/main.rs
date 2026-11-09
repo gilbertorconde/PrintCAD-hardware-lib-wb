@@ -2,6 +2,10 @@
 //! and the solid that comes out is checked to be closed, to have volume,
 //! and to span its axis. Prints a table and exits 1 if any part fails.
 
+// The package's modules fill the contract's structs with
+// `..Default::default()` even where every field is named.
+#![allow(clippy::needless_update)]
+
 use std::time::Instant;
 
 #[path = "../../../src/diagram.rs"]

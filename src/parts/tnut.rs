@@ -514,7 +514,7 @@ impl Part for TNut {
 
     fn apply(&mut self, event: &PanelEvent) -> bool {
         match event {
-            PanelEvent::Choice { id, index } => match id.as_str() {
+            PanelEvent::Choice { id, index, .. } => match id.as_str() {
                 "kind" => {
                     self.kind = TNutKind::ALL
                         .get(*index)
@@ -534,7 +534,7 @@ impl Part for TNut {
                 }
                 _ => return false,
             },
-            PanelEvent::Number { id, value } => match id.as_str() {
+            PanelEvent::Number { id, value, .. } => match id.as_str() {
                 "d" => self.d = *value,
                 "pitch" => self.pitch = *value,
                 "length" => self.length = *value,
@@ -547,7 +547,7 @@ impl Part for TNut {
                 "thread_at" => self.thread_at = *value,
                 _ => return false,
             },
-            PanelEvent::Toggle { id, on } => match id.as_str() {
+            PanelEvent::Toggle { id, on, .. } => match id.as_str() {
                 "custom" => {
                     self.custom = *on;
                     if !*on {
