@@ -904,8 +904,13 @@ impl Screw {
                     let x = -rk + 2.0 * rk * i as f64 / n as f64;
                     s.line(&[[x, k - t], [x, k]], DiagramStroke::Thin);
                 }
-                s.height("t", rk, k - t, k, -off * 0.6, format!("t {}", fmt(t)));
-                s.width("s", -rs, rs, 0.0, -off * 0.5, format!("ds {}", fmt(self.s)));
+                s.height("t", -rk, k - t, k, off * 0.6, format!("t {}", fmt(t)));
+                s.callout(
+                    "s",
+                    [-rs, (k - t) / 2.0],
+                    [-(rk + off), -off * 1.5],
+                    format!("ds {}", fmt(self.s)),
+                );
             }
             Head::Set => {
                 let point = (self.d - self.dk) / 2.0;
@@ -933,11 +938,18 @@ impl Screw {
                 [hs, top - self.t],
                 [hs, top],
             ]);
-            let x = wide / 2.0 + off * 0.9;
+            // Clear of the head's measures: beside a set screw's top,
+            // under a head on the free side of the shank.
+            let at = if self.head == Head::Set {
+                [wide / 2.0 + off * 1.7, top + off * 0.6]
+            } else {
+                [-(wide / 2.0 + off), -off * 1.5]
+            };
+            let anchor = if self.head == Head::Set { hs } else { -hs };
             s.callout(
                 "s",
-                [hs, top - self.t / 2.0],
-                [x + off * 0.8, top + off * 0.6],
+                [anchor, top - self.t / 2.0],
+                at,
                 format!("s {}", fmt(self.s)),
             );
         }
@@ -954,7 +966,14 @@ impl Screw {
                 off,
                 format!("{label} {}", fmt(self.dk)),
             );
-            s.height("k", -wide / 2.0, 0.0, k, off, format!("k {}", fmt(k)));
+            // On the right, chained with the length, so the head's top
+            // carries only its width; a countersunk length starts at
+            // the top, so its k stays on the left.
+            if self.head == Head::Countersunk {
+                s.height("k", -wide / 2.0, 0.0, k, off, format!("k {}", fmt(k)));
+            } else {
+                s.height("k", wide / 2.0, k, 0.0, off, format!("k {}", fmt(k)));
+            }
         }
         let (l_top, l_bottom) = match self.head {
             Head::Countersunk => (k, bottom),
@@ -966,7 +985,7 @@ impl Screw {
             wide / 2.0,
             l_top,
             l_bottom,
-            -off,
+            off,
             format!("L {}", fmt(self.length)),
         );
         let tip = l_bottom;

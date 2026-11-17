@@ -715,11 +715,12 @@ impl Nut {
                 s.poly(&other, DiagramStroke::Outline, false);
                 s.width("e", -half, half, m, off, format!("e {}", fmt(self.e)));
                 s.width("s", -body, body, 0.0, -off, format!("d2 {}", fmt(self.s)));
+                // On the right, apart from the height on the left.
                 s.height(
                     "k",
-                    -half,
-                    0.0,
+                    half,
                     self.k,
+                    0.0,
                     off * 0.6,
                     format!("k {}", fmt(self.k)),
                 );
@@ -748,10 +749,17 @@ impl Nut {
         s.hidden(&[[-r, 0.0], [-r, m]]);
         s.hidden(&[[r, 0.0], [r, m]]);
         s.axis(0.0, -off * 0.4, m + off * 0.4);
+        // A wing nut's right carries its wings' notes and k; its thread
+        // is noted on the left.
+        let side = if self.kind == NutKind::Wing {
+            -1.0
+        } else {
+            1.0
+        };
         s.callout(
             "d",
-            [r, m * 0.3],
-            [half + off * 0.8, -off * 0.6],
+            [side * r, m * 0.3],
+            [side * (half + off * 0.8), -off * 0.6],
             format!("{} × {}", self.size, fmt(self.pitch)),
         );
         s.finish("nut")
