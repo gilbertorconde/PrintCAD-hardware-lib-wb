@@ -18,6 +18,8 @@ pub mod diagram;
 pub mod fit;
 pub mod geom;
 pub mod parts;
+#[cfg(test)]
+mod preview;
 pub mod standards;
 
 use printcad_bench_sdk::api::kernel_api::FaceSurface;

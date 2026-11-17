@@ -417,8 +417,10 @@ impl Part for TNut {
             .map(|s| format!("{} series, slot {}", s.cell, fmt(s.opening)))
             .collect();
         let sizes = self.sizes();
+        let [section, plan] = self.drawings(ctx);
         let mut widgets = vec![
-            self.drawing(ctx),
+            section,
+            plan,
             choice(
                 "kind",
                 "Nut",
@@ -637,9 +639,10 @@ impl Part for TNut {
 }
 
 impl TNut {
-    /// The section across the slot, drawn in its slot, with the plan
-    /// beside it.
-    fn drawing(&self, ctx: &Ctx) -> Widget {
+    /// The section across the slot, drawn in its slot, and the plan
+    /// under it, each a drawing of its own so neither shrinks to fit
+    /// the other.
+    fn drawings(&self, ctx: &Ctx) -> [Widget; 2] {
         let mut s = Sketch::new(ctx.focus);
         let series = standards::extrusion(self.series).unwrap_or(&standards::EXTRUSIONS[0]);
         let (b, w, t, e) = (self.bottom / 2.0, self.top / 2.0, self.thick, self.straight);
@@ -684,8 +687,11 @@ impl TNut {
             s.height("neck", reach, t, t + nh, -off * 0.6, fmt(nh));
             s.width("neck_w", -n, n, t + nh, off * 0.5, fmt(self.neck_w));
         }
-        // The plan, beside: the thread, a set screw, a ball.
-        let x0 = reach + off * 2.2 + self.top / 2.0;
+        let section = s.finish("tnut");
+        // The plan: the thread, a set screw, a ball.
+        let mut s = Sketch::new(ctx.focus);
+        let off = Sketch::standoff(self.length.max(self.top) * 0.6);
+        let x0 = 0.0;
         let plan: Vec<[f64; 2]> = self.plan().iter().map(|p| [p[0] + x0, p[1]]).collect();
         s.poly(&plan, DiagramStroke::Outline, false);
         s.circle([x0, self.thread_y()], self.d, DiagramStroke::Outline, false);
@@ -721,7 +727,7 @@ impl TNut {
                 fmt(self.thread_at),
             );
         }
-        s.finish("tnut")
+        [section, s.finish("tnut_plan")]
     }
 }
 
